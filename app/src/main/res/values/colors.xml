@@ -1,11 +1,10 @@
 <resources>
     <color name="bg">#0D0F15</color>
-    <color name="surface">#171A22</color>
-    <color name="surface2">#202532</color>
+    <color name="surface">#151821</color>
+    <color name="surface2">#1B1F2A</color>
+    <color name="border">#2B3140</color>
     <color name="text">#F4F6FB</color>
     <color name="muted">#9AA4B8</color>
     <color name="accent">#4F8EF7</color>
-    <color name="success">#3ECF8E</color>
-    <color name="warning">#F5C542</color>
-    <color name="danger">#FF6B6B</color>
+    <color name="accent_pressed">#3E78D8</color>
 </resources>

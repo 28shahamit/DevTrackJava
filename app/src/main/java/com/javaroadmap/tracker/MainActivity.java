@@ -31,6 +31,7 @@ public class MainActivity extends Activity {
     HashSet<String> completed=new HashSet<>();
     TextView title;
     int page=0;
+    String startupError;
 
     int dp(float v){ return (int)(v*getResources().getDisplayMetrics().density+.5f); }
     TextView tv(String text,float sp){
@@ -51,12 +52,44 @@ public class MainActivity extends Activity {
     void addSpace(LinearLayout l,int h){ Space s=new Space(this); l.addView(s,new LinearLayout.LayoutParams(1,dp(h))); }
 
     @Override public void onCreate(Bundle b){
-        super.onCreate(b); setContentView(R.layout.activity_main);
+        super.onCreate(b);
+        setContentView(R.layout.activity_main);
         content=findViewById(R.id.content);
-        loadState(); loadRoadmap(); NotificationHelper.ensureChannel(this);
-        setupNav(); showHome();
-        if(Build.VERSION.SDK_INT>=33 && checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS)!=PackageManager.PERMISSION_GRANTED)
-            requestPermissions(new String[]{Manifest.permission.POST_NOTIFICATIONS},REQ_NOTIFICATION);
+        try {
+            loadState();
+            loadRoadmap();
+            try { NotificationHelper.ensureChannel(this); } catch (Exception ignored) { }
+            setupNav();
+            if (startupError != null) showStartupError(startupError);
+            else showHome();
+        } catch (Exception e) {
+            startupError = e.getClass().getSimpleName()+": "+safeMessage(e);
+            showStartupError(startupError);
+        }
+        if(Build.VERSION.SDK_INT>=33 && checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS)!=PackageManager.PERMISSION_GRANTED){
+            try { requestPermissions(new String[]{Manifest.permission.POST_NOTIFICATIONS},REQ_NOTIFICATION); } catch (Exception ignored) { }
+        }
+    }
+
+    String safeMessage(Throwable e){
+        String m=e.getMessage();
+        return (m==null||m.trim().isEmpty()) ? "Unexpected startup error" : m;
+    }
+
+    void showStartupError(String message){
+        if(content==null)return;
+        base("DevTrack","The app opened safely, but startup data needs attention.");
+        LinearLayout c=card();
+        addText(c,"Startup recovery",20);
+        addText(c,"DevTrack did not crash. It stopped the failing startup operation so your app remains usable.",13);
+        TextView err=tv(message,12); err.setTextColor(Color.parseColor("#FFB4AB")); c.addView(err);
+        Button retry=btn("↻ Retry startup");
+        retry.setOnClickListener(v->{ startupError=null; try{ loadState(); loadRoadmap(); NotificationHelper.ensureChannel(this); showHome(); } catch(Exception e){ startupError=e.getClass().getSimpleName()+": "+safeMessage(e); showStartupError(startupError); }});
+        c.addView(retry);
+        Button resetRoadmap=btn("Reset imported roadmap");
+        resetRoadmap.setOnClickListener(v->{ getSharedPreferences(PREFS,0).edit().remove("roadmapOverride").apply(); startupError=null; loadRoadmap(); showHome(); });
+        c.addView(resetRoadmap);
+        box().addView(c);
     }
     void setupNav(){
         findViewById(R.id.navHome).setOnClickListener(v->showHome());
@@ -127,7 +160,11 @@ public class MainActivity extends Activity {
         base("Java Backend Roadmap","Tap a phase to view topics. Progress is saved on this device.");
         LinearLayout c=card(); addText(c,"Overall",14); int total=topicCount(), done=completed.size(), pct=total==0?0:Math.round(done*100f/total); addText(c,done+"/"+total+" · "+pct+"%",22);
         ProgressBar p=new ProgressBar(this,null,android.R.attr.progressBarStyleHorizontal); p.setMax(100); p.setProgress(pct); c.addView(p,new LinearLayout.LayoutParams(-1,dp(8))); box().addView(c);
-        JSONArray phases=roadmap.optJSONArray("phases");
+        JSONArray phases=roadmap==null?null:roadmap.optJSONArray("phases");
+        if(phases==null){
+            addText(box(),"No roadmap phases are available. Import a valid roadmap JSON from Learn to continue.",13);
+            return;
+        }
         for(int i=0;i<phases.length();i++){
             JSONObject ph=phases.optJSONObject(i); LinearLayout pc=card();
             TextView h=tv(ph.optInt("number",i+1)+"  "+ph.optString("title"),18); h.setTypeface(null,1); pc.addView(h);
@@ -143,6 +180,7 @@ public class MainActivity extends Activity {
     }
     JSONArray phaseTopics(JSONObject ph){
         JSONArray out=new JSONArray();
+        if(ph==null)return out;
         JSONArray cats=ph.optJSONArray("categories");
         if(cats!=null) for(int i=0;i<cats.length();i++){ JSONArray ts=cats.optJSONObject(i).optJSONArray("topics"); if(ts!=null) for(int j=0;j<ts.length();j++) out.put(ts.optJSONObject(j)); }
         JSONArray direct=ph.optJSONArray("topics"); if(direct!=null) for(int j=0;j<direct.length();j++) out.put(direct.optJSONObject(j));
@@ -232,11 +270,29 @@ public class MainActivity extends Activity {
     void scheduleReminder(Context c,JSONObject t){ ReminderReceiver.schedule(c,t); }
 
     void loadRoadmap(){
+        startupError=null;
         try{
             String override=getSharedPreferences(PREFS,0).getString("roadmapOverride",null);
-            if(override!=null){ roadmap=new JSONObject(override); return; }
-            InputStream in=getAssets().open("roadmap.json"); ByteArrayOutputStream b=new ByteArrayOutputStream(); byte[] buf=new byte[8192]; int n; while((n=in.read(buf))>0)b.write(buf,0,n); roadmap=new JSONObject(b.toString("UTF-8"));
-        }catch(Exception e){roadmap=new JSONObject();}
+            if(override!=null && !override.trim().isEmpty()){
+                roadmap=new JSONObject(override);
+                validateRoadmap(roadmap);
+                return;
+            }
+            try(InputStream in=getAssets().open("roadmap.json"); ByteArrayOutputStream b=new ByteArrayOutputStream()){
+                byte[] buf=new byte[8192]; int n; while((n=in.read(buf))>0)b.write(buf,0,n);
+                roadmap=new JSONObject(b.toString("UTF-8"));
+            }
+            validateRoadmap(roadmap);
+        }catch(Exception e){
+            roadmap=new JSONObject();
+            startupError="Roadmap could not be loaded: "+safeMessage(e);
+        }
+    }
+
+    void validateRoadmap(JSONObject r) throws Exception{
+        if(r==null)throw new Exception("Roadmap data is empty");
+        JSONArray phases=r.optJSONArray("phases");
+        if(phases==null)throw new Exception("Roadmap is missing the phases array");
     }
     void loadState(){
         String raw=getSharedPreferences(PREFS,0).getString("state",null);
@@ -250,7 +306,14 @@ public class MainActivity extends Activity {
         try{JSONObject s=new JSONObject(); JSONArray c=new JSONArray(); for(String id:completed)c.put(id); s.put("completed",c);s.put("tasks",tasks);s.put("sessions",sessions);getSharedPreferences(PREFS,0).edit().putString("state",s.toString()).apply();}catch(Exception ignored){}
     }
 
-    int topicCount(){ if(roadmap==null)return 0; int n=0; JSONArray ps=roadmap.optJSONArray("phases");for(int i=0;i<ps.length();i++)n+=phaseTopics(ps.optJSONObject(i)).length();return n; }
+    int topicCount(){
+        if(roadmap==null)return 0;
+        JSONArray ps=roadmap.optJSONArray("phases");
+        if(ps==null)return 0;
+        int n=0;
+        for(int i=0;i<ps.length();i++)n+=phaseTopics(ps.optJSONObject(i)).length();
+        return n;
+    }
     long todaySessionMs(String d){long n=0;for(int i=0;i<sessions.length();i++){JSONObject s=sessions.optJSONObject(i);if(d.equals(s.optString("date")))n+=s.optLong("durationMs",0);}return n;}
     String sessionLine(JSONObject s){return s.optString("date")+" · "+s.optString("title")+" · "+formatDuration(s.optLong("durationMs",0));}
     String date(){return new SimpleDateFormat("yyyy-MM-dd",Locale.US).format(new Date());}

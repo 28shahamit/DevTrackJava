@@ -61,3 +61,12 @@ This is deliberately a clean native baseline for comparison against the existing
 Android 13+ requires notification permission. Exact alarms can also be restricted by Android; the app falls back to `setAndAllowWhileIdle` if exact-alarm permission is unavailable.
 
 The notification channel is `task_reminders_v2`.
+
+## Reliability / polish update
+
+- Defensive startup and roadmap validation
+- Safe handling when imported roadmap data is missing or malformed
+- Startup recovery screen instead of a null-data crash
+- Branded DevTrack launcher icon with adaptive Android icon support
+- Native reminder channel uses the device alarm ringtone where available
+- Cleaner native bottom navigation styling

@@ -7,10 +7,10 @@ import android.content.pm.PackageManager;
 import android.media.AudioAttributes;
 import android.net.Uri;
 import android.os.Build;
-import android.provider.Settings;
+import android.media.RingtoneManager;
 
 public final class NotificationHelper {
-    public static final String CHANNEL_ID="task_reminders_v2";
+    public static final String CHANNEL_ID="task_reminders_v3";
     private NotificationHelper(){}
 
     public static void ensureChannel(Context c){
@@ -19,8 +19,10 @@ public final class NotificationHelper {
             NotificationChannel ch=new NotificationChannel(CHANNEL_ID,"Task reminders",NotificationManager.IMPORTANCE_HIGH);
             ch.setDescription("DevTrack task and study reminders");
             ch.enableVibration(true);
-            ch.setSound(android.provider.Settings.System.DEFAULT_NOTIFICATION_URI,
-                    new AudioAttributes.Builder().setUsage(AudioAttributes.USAGE_NOTIFICATION).build());
+            Uri alarmSound=RingtoneManager.getDefaultUri(RingtoneManager.TYPE_ALARM);
+            if(alarmSound==null) alarmSound=RingtoneManager.getDefaultUri(RingtoneManager.TYPE_NOTIFICATION);
+            ch.setSound(alarmSound,
+                    new AudioAttributes.Builder().setUsage(AudioAttributes.USAGE_ALARM).build());
             nm.createNotificationChannel(ch);
         }
     }
@@ -33,7 +35,7 @@ public final class NotificationHelper {
         android.app.Notification n=new Notification.Builder(c,CHANNEL_ID)
                 .setSmallIcon(android.R.drawable.ic_lock_idle_alarm)
                 .setContentTitle("DevTrack test alarm")
-                .setContentText("Your reminder notifications are working.")
+                .setContentText("Your DevTrack alarm is working.")
                 .setAutoCancel(true)
                 .setCategory(Notification.CATEGORY_ALARM)
                 .setPriority(Notification.PRIORITY_HIGH)
