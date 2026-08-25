@@ -10,22 +10,27 @@ public class ReminderReceiver extends BroadcastReceiver {
     static final String EXTRA_TASK_ID="taskId";
 
     @Override public void onReceive(Context context, Intent intent){
-        NotificationHelper.ensureChannel(context);
-        String title=intent.getStringExtra(EXTRA_TITLE);
-        if(title==null||title.trim().isEmpty())title="Planned task";
-        Intent open=new Intent(context,MainActivity.class);
-        open.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK|Intent.FLAG_ACTIVITY_CLEAR_TOP);
-        PendingIntent pi=PendingIntent.getActivity(context,0,open,PendingIntent.FLAG_UPDATE_CURRENT|PendingIntent.FLAG_IMMUTABLE);
-        Notification n=new Notification.Builder(context,NotificationHelper.CHANNEL_ID)
-                .setSmallIcon(android.R.drawable.ic_lock_idle_alarm)
-                .setContentTitle("DevTrack reminder")
-                .setContentText(title)
-                .setContentIntent(pi)
-                .setAutoCancel(true)
-                .setCategory(Notification.CATEGORY_ALARM)
-                .setPriority(Notification.PRIORITY_HIGH)
-                .build();
-        context.getSystemService(NotificationManager.class).notify(Math.abs((intent.getStringExtra(EXTRA_TASK_ID)+"").hashCode()),n);
+        try{
+            if(Build.VERSION.SDK_INT>=33 && context.checkSelfPermission(android.Manifest.permission.POST_NOTIFICATIONS)!=android.content.pm.PackageManager.PERMISSION_GRANTED){
+                return;
+            }
+            NotificationHelper.ensureChannel(context);
+            String title=intent.getStringExtra(EXTRA_TITLE);
+            if(title==null||title.trim().isEmpty())title="Planned task";
+            Intent open=new Intent(context,MainActivity.class);
+            open.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK|Intent.FLAG_ACTIVITY_CLEAR_TOP);
+            PendingIntent pi=PendingIntent.getActivity(context,0,open,PendingIntent.FLAG_UPDATE_CURRENT|PendingIntent.FLAG_IMMUTABLE);
+            Notification n=new Notification.Builder(context,NotificationHelper.CHANNEL_ID)
+                    .setSmallIcon(android.R.drawable.ic_lock_idle_alarm)
+                    .setContentTitle("DevTrack reminder")
+                    .setContentText(title)
+                    .setContentIntent(pi)
+                    .setAutoCancel(true)
+                    .setCategory(Notification.CATEGORY_ALARM)
+                    .setPriority(Notification.PRIORITY_HIGH)
+                    .build();
+            context.getSystemService(NotificationManager.class).notify(Math.abs((intent.getStringExtra(EXTRA_TASK_ID)+"").hashCode()),n);
+        }catch(Exception ignored){}
     }
 
     public static void schedule(Context c, JSONObject t){

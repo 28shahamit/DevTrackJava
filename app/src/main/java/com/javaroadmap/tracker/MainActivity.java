@@ -25,7 +25,7 @@ public class MainActivity extends Activity {
     static final int REQ_NOTIFICATION=200;
     static final int REQ_IMPORT=201, REQ_EXPORT=202;
 
-    LinearLayout content;
+    FrameLayout content;
     JSONObject roadmap;
     JSONArray tasks, sessions;
     HashSet<String> completed=new HashSet<>();
