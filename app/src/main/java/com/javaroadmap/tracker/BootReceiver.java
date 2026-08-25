@@ -9,12 +9,11 @@ public class BootReceiver extends BroadcastReceiver {
         String raw=context.getSharedPreferences(MainActivity.PREFS,0).getString("state",null);
         if(raw==null)return;
         try{
-            JSONArray tasks=new JSONObject(raw).optJSONArray("tasks");
-            if(tasks==null)return;
-            for(int i=0;i<tasks.length();i++){
-                JSONObject t=tasks.optJSONObject(i);
-                if(t!=null && !"completed".equals(t.optString("status"))) ReminderReceiver.schedule(context,t);
-            }
-        }catch(Exception ignored){}
+            JSONObject state=new JSONObject(raw);
+            JSONArray tasks=state.optJSONArray("tasks");
+            if(tasks!=null)for(int i=0;i<tasks.length();i++){JSONObject t=tasks.optJSONObject(i);if(t!=null&&"not_started".equals(t.optString("status")))ReminderReceiver.schedule(context,t);}
+            JSONArray schedules=state.optJSONArray("schedules");
+            if(schedules!=null)for(int i=0;i<schedules.length();i++){JSONObject b=schedules.optJSONObject(i);if(b!=null)ReminderReceiver.scheduleNext(context,b);}
+        }catch(Exception e){android.util.Log.e("DevTrack","Boot reschedule failed",e);}
     }
 }

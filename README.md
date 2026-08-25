@@ -70,3 +70,28 @@ The notification channel is `task_reminders_v2`.
 - Branded DevTrack launcher icon with adaptive Android icon support
 - Native reminder channel uses the device alarm ringtone where available
 - Cleaner native bottom navigation styling
+
+## Daily schedule JSON
+
+DevTrack supports importing and exporting a daily schedule from **Plan → Import Daily Schedule JSON**.
+Each block can define its own `color` and alarm configuration:
+
+```json
+{
+  "id": "java",
+  "title": "Java Backend",
+  "start": "20:00",
+  "end": "21:30",
+  "category": "LEARNING",
+  "color": "#7C5CFC",
+  "track": true,
+  "days": ["MONDAY", "WEDNESDAY", "FRIDAY"],
+  "alarm": {
+    "enabled": true,
+    "minutesBefore": 10,
+    "sound": "alarm"
+  }
+}
+```
+
+The schedule UI uses the block color as a visual timeline accent. Alarm settings are applied when the schedule is imported. Alarms use the device alarm ringtone through the native Android notification channel and are rescheduled after reboot.
