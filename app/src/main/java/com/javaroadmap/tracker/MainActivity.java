@@ -35,6 +35,7 @@ public class MainActivity extends Activity {
     HashSet<String> completed=new HashSet<>();
     TextView title;
     int page=0;
+    boolean roadmapDetailOpen=false;
     String startupError;
     final Handler uiHandler = new Handler(Looper.getMainLooper());
     TextView timerText, timerTitle, timerMeta;
@@ -55,6 +56,11 @@ public class MainActivity extends Activity {
         b.setAllCaps(false); b.setBackgroundResource(R.drawable.secondary_button_bg); b.setMinHeight(dp(44)); b.setPadding(dp(16),dp(8),dp(16),dp(8)); return b;
     }
     Button primaryBtn(String text){Button b=btn(text);b.setBackgroundResource(R.drawable.primary_button_bg);return b;}
+    Button iconBtn(String icon,String description){
+        Button b=btn(icon); b.setContentDescription(description);
+        b.setMinWidth(dp(44)); b.setMinimumWidth(dp(44));
+        b.setPadding(dp(8),dp(8),dp(8),dp(8)); return b;
+    }
     LinearLayout card(){
         LinearLayout l=new LinearLayout(this); l.setOrientation(LinearLayout.VERTICAL);
         l.setPadding(dp(16),dp(14),dp(16),dp(14)); l.setBackgroundResource(R.drawable.card_bg);
@@ -75,6 +81,11 @@ public class MainActivity extends Activity {
         timerUiAttached = false;
         uiHandler.removeCallbacks(timerTicker);
         super.onPause();
+    }
+
+    @Override public void onBackPressed(){
+        if(page==1 && roadmapDetailOpen){showLearn();return;}
+        super.onBackPressed();
     }
 
     @Override public void onCreate(Bundle b){
@@ -148,10 +159,18 @@ public class MainActivity extends Activity {
         sc.addView(box); content.addView(sc);
         content.setTag(box);
     }
+    void baseWithBack(String heading,String sub,Runnable backAction){
+        base(heading,sub);
+        LinearLayout root=box(); root.removeAllViews();
+        Button back=btn("‹  Back"); back.setContentDescription("Back"); back.setOnClickListener(v->backAction.run());
+        root.addView(back,new LinearLayout.LayoutParams(-2,dp(44)));
+        title=tv(heading,28); title.setTypeface(null,1); root.addView(title);
+        if(sub!=null){TextView st=tv(sub,13);st.setTextColor(Color.parseColor("#9AA4B8"));root.addView(st);}
+    }
     LinearLayout box(){ return (LinearLayout)content.getTag(); }
 
     void showHome(){
-        page=0; base("DevTrack","Your day, your time, your progress");
+        page=0; roadmapDetailOpen=false; base("DevTrack","Your day, your time, your progress");
         String today=date();
         long tracked=todaySessionMs(today)+activeElapsedMsForDate(today);
         int total=topicCount(), done=completedFor(currentRoadmapId).size(), pct=total==0?0:Math.round(done*100f/total);
@@ -159,48 +178,34 @@ public class MainActivity extends Activity {
         LinearLayout hero=card();
         addText(hero,"TODAY",11);
         addText(hero,formatDuration(tracked)+" tracked",28);
-        addText(hero,done+" / "+total+" roadmap topics · "+pct+"%",13);
+        addText(hero,done+" / "+total+" "+roadmapItemLabel(roadmap)+" · "+pct+"%",13);
         ProgressBar pb=new ProgressBar(this,null,android.R.attr.progressBarStyleHorizontal); pb.setMax(100); pb.setProgress(pct); hero.addView(pb,new LinearLayout.LayoutParams(-1,dp(7)));
         box().addView(hero);
 
         addTrackingCard(box());
-        addTodayPlanCard(box(), today, true);
 
         LinearLayout quick=card(); addText(quick,"Quick actions",18);
+        Button plan=btn("✓ Open today's plan"); plan.setOnClickListener(v->showPlan()); quick.addView(plan);
         Button log=btn("＋ Log past activity"); log.setOnClickListener(v->activityLogDialog()); quick.addView(log);
         Button start=btn("▶ Start manual activity"); start.setOnClickListener(v->manualStartDialog()); quick.addView(start);
         box().addView(quick);
     }
 
     void addTrackingCard(LinearLayout parent){
-        LinearLayout c=card(); addText(c,"TIME TRACKING",11);
-        JSONObject active=getActiveTimer();
+        LinearLayout c=card(); addText(c,"TIME TRACKING",11); JSONObject active=getActiveTimer();
         if(active!=null){
-            addText(c,"● RUNNING",12);
-            timerTitle=tv(active.optString("title","Activity"),20); c.addView(timerTitle);
+            addText(c,"● RUNNING",12); timerTitle=tv(active.optString("title","Activity"),20); c.addView(timerTitle);
             timerMeta=tv(active.optString("category","OTHER"),12); timerMeta.setTextColor(Color.parseColor("#9AA4B8")); c.addView(timerMeta);
             timerText=tv("00:00:00",34); timerText.setTypeface(null,1); timerText.setGravity(Gravity.CENTER); c.addView(timerText,new LinearLayout.LayoutParams(-1,dp(54)));
-            LinearLayout r=row();
-            timerButton=primaryBtn("■ Stop & Save"); timerButton.setOnClickListener(v->stopActiveTimer(false)); r.addView(timerButton,new LinearLayout.LayoutParams(0,-2,1));
-            timerCompleteButton=btn("✓ Complete"); timerCompleteButton.setOnClickListener(v->stopActiveTimer(true)); r.addView(timerCompleteButton,new LinearLayout.LayoutParams(0,-2,1));
-            c.addView(r);
+            LinearLayout r=row(); timerButton=primaryBtn("■ Stop & Save"); timerButton.setOnClickListener(v->stopActiveTimer(false)); r.addView(timerButton,new LinearLayout.LayoutParams(0,-2,1));
+            timerCompleteButton=btn("✓ Complete"); timerCompleteButton.setOnClickListener(v->stopActiveTimer(true)); r.addView(timerCompleteButton,new LinearLayout.LayoutParams(0,-2,1)); c.addView(r);
         }else{
-            boolean manual=isManualMode();
-            addText(c,manual?"MANUAL MODE":"AUTOMATIC PLAN MODE",12);
-            JSONObject candidate=manual?null:currentOrNextTrackableSchedule(date());
-            if(candidate!=null){
-                addText(c,isCurrentSchedule(candidate)?"CURRENT PLAN":"NEXT PLAN",11);
-                addText(c,candidate.optString("title","Planned activity"),20);
-                addText(c,candidate.optString("start","")+" – "+candidate.optString("end","")+" · "+candidate.optString("category","OTHER"),12);
-                Button start=primaryBtn("▶ Start planned activity"); start.setOnClickListener(v->startScheduleBlock(candidate)); c.addView(start);
-            }else{
-                addText(c,manual?"Choose the activity you are doing.":"No more trackable activities are scheduled today.",13);
-                Button start=primaryBtn("▶ Start manual activity"); start.setOnClickListener(v->manualStartDialog()); c.addView(start);
-            }
-        }
-        parent.addView(c);
+            addText(c,isManualMode()?"MANUAL MODE":"AUTOMATIC PLAN MODE",12); addText(c,"No timer is running",18);
+            addText(c,"Today's schedule is managed from the Plan tab.",12); LinearLayout r=row();
+            Button plan=primaryBtn("✓ Open today's plan"); plan.setOnClickListener(v->showPlan()); r.addView(plan,new LinearLayout.LayoutParams(0,-2,1));
+            Button manual=btn("▶ Manual"); manual.setOnClickListener(v->manualStartDialog()); r.addView(manual,new LinearLayout.LayoutParams(0,-2,1)); c.addView(r);
+        } parent.addView(c);
     }
-
     void addTodayPlanCard(LinearLayout parent,String today,boolean includeManualTasks){
         LinearLayout plan=card(); addText(plan,"TODAY'S PLAN",19);
         ArrayList<JSONObject> blocks=todaysScheduleBlocks(today);
@@ -245,7 +250,7 @@ public class MainActivity extends Activity {
     }
 
     void showLearn(){
-        page=1; base("Learn","Dynamic roadmaps — import, edit and track each learning path separately.");
+        page=1; roadmapDetailOpen=false; base("Learn","Dynamic roadmaps — import, edit and track each learning path separately.");
         if(roadmaps==null||roadmaps.length()==0){
             LinearLayout empty=card(); addText(empty,"No roadmaps yet",20); addText(empty,"Import a roadmap JSON to get started.",13); Button imp=primaryBtn("📥 Import Roadmap JSON"); imp.setOnClickListener(v->importRoadmap()); empty.addView(imp); box().addView(empty); return;
         }
@@ -263,19 +268,20 @@ public class MainActivity extends Activity {
         LinearLayout head=row();
         addText(head,r.optString("icon","📚")+"  "+roadmapName(r),20); c.addView(head);
         addText(c,roadmapDescription(r),12);
-        addText(c,done+" / "+total+" topics · "+pct+"% complete",13);
+        addText(c,done+" / "+total+" "+roadmapItemLabel(r)+" · "+pct+"% complete",13);
         ProgressBar pb=new ProgressBar(this,null,android.R.attr.progressBarStyleHorizontal);pb.setMax(100);pb.setProgress(pct);c.addView(pb,new LinearLayout.LayoutParams(-1,dp(8)));
         LinearLayout row=row();
         Button open=primaryBtn(id.equals(currentRoadmapId)?"✓ Open roadmap":"Open roadmap"); open.setOnClickListener(v->{setCurrentRoadmap(id);showRoadmap();}); row.addView(open,new LinearLayout.LayoutParams(0,-2,1));
-        Button edit=btn("Edit"); edit.setOnClickListener(v->editRoadmapDialog(r)); row.addView(edit,new LinearLayout.LayoutParams(0,-2,1));
+        Button edit=iconBtn("✎","Edit roadmap"); edit.setOnClickListener(v->editRoadmapDialog(r)); row.addView(edit);
         c.addView(row); parent.addView(c);
     }
     void showRoadmap(){
         if(roadmap==null){showLearn();return;}
-        base(roadmapName(roadmap),roadmapDescription(roadmap));
+        page=1; roadmapDetailOpen=true;
+        baseWithBack(roadmapName(roadmap),roadmapDescription(roadmap),()->showLearn());
         LinearLayout c=card(); addText(c,"ROADMAP PROGRESS",11);
         int total=topicCount(), done=completedFor(currentRoadmapId).size(), pct=total==0?0:Math.round(done*100f/total);
-        addText(c,done+" / "+total+" · "+pct+"%",26);
+        addText(c,done+" / "+total+" "+roadmapItemLabel(roadmap)+" · "+pct+"%",26);
         int savedCount=0,laterCount=0; JSONArray allPh=roadmap.optJSONArray("phases"); if(allPh!=null)for(int pi=0;pi<allPh.length();pi++){JSONArray ts=phaseTopics(allPh.optJSONObject(pi));for(int ti=0;ti<ts.length();ti++){JSONObject tt=ts.optJSONObject(ti);if(tt!=null){if(tt.optBoolean("saved",false))savedCount++;if(tt.optBoolean("later",false))laterCount++;}}}
         addText(c,"★ Saved "+savedCount+"   ·   ↺ Later "+laterCount,11);
         ProgressBar p=new ProgressBar(this,null,android.R.attr.progressBarStyleHorizontal); p.setMax(100); p.setProgress(pct); c.addView(p,new LinearLayout.LayoutParams(-1,dp(8)));
@@ -294,7 +300,7 @@ public class MainActivity extends Activity {
             addText(pc,ph.optString("duration","")+" · "+topics.length()+" items · "+d+" done · "+pp+"%",12);
             ProgressBar bar=new ProgressBar(this,null,android.R.attr.progressBarStyleHorizontal); bar.setMax(100); bar.setProgress(pp); pc.addView(bar,new LinearLayout.LayoutParams(-1,dp(8)));
             LinearLayout list=new LinearLayout(this); list.setOrientation(LinearLayout.VERTICAL); pc.addView(list);
-            LinearLayout phaseActions=row(); Button ep=btn("Edit phase"); ep.setOnClickListener(v->editPhaseDialog(ph)); phaseActions.addView(ep,new LinearLayout.LayoutParams(0,-2,1)); Button at=btn("＋ Add item"); at.setOnClickListener(v->editTopicDialog(ph,null)); phaseActions.addView(at,new LinearLayout.LayoutParams(0,-2,1)); list.addView(phaseActions);
+            LinearLayout phaseActions=row(); Button ep=iconBtn("✎","Edit phase"); ep.setOnClickListener(v->editPhaseDialog(ph)); phaseActions.addView(ep); Button at=btn("＋ Add item"); at.setOnClickListener(v->editTopicDialog(ph,null)); phaseActions.addView(at,new LinearLayout.LayoutParams(0,-2,1)); list.addView(phaseActions);
             boolean expanded=ph.optBoolean("expanded",false); list.setVisibility(expanded?View.VISIBLE:View.GONE);
             phaseHead.setOnClickListener(v->{boolean show=list.getVisibility()!=View.VISIBLE;list.setVisibility(show?View.VISIBLE:View.GONE);try{ph.put("expanded",show);saveRoadmaps();}catch(Exception ignored){}});
             for(int j=0;j<topics.length();j++){JSONObject t=topics.optJSONObject(j);if(t!=null)addTopicRow(list,t,ph);}
@@ -318,6 +324,7 @@ public class MainActivity extends Activity {
         String difficulty=t.optString("difficulty",""); if(!difficulty.isEmpty()){if(meta.length()>0)meta.append(" · ");meta.append(difficulty.toUpperCase(Locale.US));}
         if(meta.length()>0)addText(c,meta.toString(),11);
         JSONArray subs=t.optJSONArray("subtopics"); if(subs!=null&&subs.length()>0)addText(c,"Topics: "+joinJsonArray(subs),11);
+        JSONArray tags=t.optJSONArray("tags"); if(tags!=null&&tags.length()>0)addText(c,"Tags: "+joinJsonArray(tags),11);
         LinearLayout actions=row();
         CheckBox cb=new CheckBox(this); cb.setChecked(done); cb.setText("DONE"); cb.setTextColor(Color.parseColor("#F4F6FB")); actions.addView(cb,new LinearLayout.LayoutParams(0,-2,1));
         String primary=t.optString("url",""); JSONArray links=t.optJSONArray("links"); boolean hasLink=!primary.trim().isEmpty()||(links!=null&&links.length()>0);
@@ -325,7 +332,7 @@ public class MainActivity extends Activity {
         boolean saved=t.optBoolean("saved",false); Button save=btn(saved?"★ Saved":"☆ Save"); save.setOnClickListener(v->{try{t.put("saved",!t.optBoolean("saved",false));saveRoadmaps();showRoadmap();}catch(Exception ignored){}});actions.addView(save,new LinearLayout.LayoutParams(0,-2,1));
         boolean later=t.optBoolean("later",false); Button laterBtn=btn(later?"↺ Later":"Later"); laterBtn.setOnClickListener(v->{try{t.put("later",!t.optBoolean("later",false));saveRoadmaps();showRoadmap();}catch(Exception ignored){}});actions.addView(laterBtn,new LinearLayout.LayoutParams(0,-2,1));
         c.addView(actions);
-        LinearLayout secondary=row(); Button track=btn("▶ Track");track.setOnClickListener(v->startPersistentTimer(t.optString("title","Roadmap item"),"LEARNING",null,null));secondary.addView(track,new LinearLayout.LayoutParams(0,-2,1)); Button edit=btn("Edit");edit.setOnClickListener(v->editTopicDialog(phase,t));secondary.addView(edit,new LinearLayout.LayoutParams(0,-2,1));c.addView(secondary);
+        LinearLayout secondary=row(); Button track=btn("▶ Track");track.setOnClickListener(v->startPersistentTimer(t.optString("title","Roadmap item"),"LEARNING",null,null));secondary.addView(track,new LinearLayout.LayoutParams(0,-2,1)); Button edit=iconBtn("✎","Edit roadmap item");edit.setOnClickListener(v->editTopicDialog(phase,t));secondary.addView(edit);c.addView(secondary);
         cb.setOnClickListener(v->{HashSet<String> set=completedFor(currentRoadmapId);if(cb.isChecked())set.add(id);else set.remove(id);saveCompletedFor(currentRoadmapId,set);showRoadmap();});
         list.addView(c);
     }
@@ -341,7 +348,7 @@ public class MainActivity extends Activity {
     }
 
     void showPlan(){
-        page=2; base("Plan","Your schedule is the source of truth for today's planned activities.");
+        page=2; roadmapDetailOpen=false; base("Plan","Your schedule is the source of truth for today's planned activities.");
         LinearLayout actions=card(); addText(actions,"DAILY SCHEDULE",19);
         Button imp=primaryBtn("📥 Import Daily Schedule JSON"); imp.setOnClickListener(v->importDailySchedule()); actions.addView(imp);
         Button exp=btn("📤 Export Daily Schedule JSON"); exp.setOnClickListener(v->exportDailySchedule()); actions.addView(exp);
@@ -364,40 +371,39 @@ public class MainActivity extends Activity {
     }
 
     void addSessionSummaryCard(LinearLayout parent,String day){
-        LinearLayout history=card(); addText(history,"TODAY'S TRACKED ACTIVITIES",19);
+        LinearLayout history=card(); history.setMinimumHeight(0); addText(history,"TODAY'S TRACKED ACTIVITIES",19);
         ArrayList<JSONObject> groups=aggregateSessions(day);
-        if(groups.isEmpty()){addText(history,"No saved tracking yet. Start an activity above.",13);parent.addView(history);return;}
+        if(groups.isEmpty()){addText(history,"No activities tracked today.",13);parent.addView(history);return;}
         for(JSONObject g:groups){
-            LinearLayout r=row(); LinearLayout mid=new LinearLayout(this);mid.setOrientation(LinearLayout.VERTICAL);
-            addText(mid,g.optString("title"),16); addText(mid,g.optString("category","OTHER")+" · "+formatDurationSmart(g.optLong("durationMs",0))+" · "+g.optInt("sessionCount",0)+" session"+(g.optInt("sessionCount",0)==1?"":"s"),11);
+            LinearLayout r=row(); r.setGravity(Gravity.TOP|Gravity.CENTER_VERTICAL); r.setMinimumHeight(0); r.setPadding(0,dp(6),0,dp(6));
+            LinearLayout mid=new LinearLayout(this);mid.setOrientation(LinearLayout.VERTICAL);mid.setMinimumHeight(0);
+            addText(mid,g.optString("title"),16);addText(mid,g.optString("category","OTHER")+" · "+formatDurationSmart(g.optLong("durationMs",0))+" · "+g.optInt("sessionCount",0)+" session"+(g.optInt("sessionCount",0)==1?"":"s"),11);
             r.addView(mid,new LinearLayout.LayoutParams(0,-2,1));
-            if(g.optBoolean("resumable",false)){Button resume=btn("Resume");resume.setOnClickListener(v->resumeSessionFromGroup(g));r.addView(resume);}
-            if(g.optBoolean("completed",false))addText(r,"✓",16);
-            history.addView(r);
-        }
-        parent.addView(history);
+            if(g.optBoolean("resumable",false)){Button resume=btn("Resume");resume.setOnClickListener(v->resumeSessionFromGroup(g));r.addView(resume,new LinearLayout.LayoutParams(-2,-2));}
+            if(g.optBoolean("completed",false)){TextView check=tv("✓",16);check.setGravity(Gravity.CENTER);r.addView(check,new LinearLayout.LayoutParams(dp(36),dp(44)));}
+            history.addView(r,new LinearLayout.LayoutParams(-1,-2));
+        } parent.addView(history);
     }
-
     void taskCard(LinearLayout parent,JSONObject t,int idx){
         LinearLayout c=card(); addText(c,t.optString("title"),17); addText(c,t.optString("date")+" · "+t.optString("start","")+"–"+t.optString("end",""),12);
         addText(c,"Estimate "+formatMin(t.optInt("estimateMin",0))+" · Actual "+formatMin(t.optInt("actualMin",0))+" · Remaining "+formatMin(t.optInt("remainingMin",0)),12);
         addText(c,"Status: "+t.optString("status","not_started")+" · Priority: "+t.optString("priority","medium")+" · Category: "+t.optString("category","LEARNING"),11);
         LinearLayout r=row();
         Button st=primaryBtn("completed".equals(t.optString("status"))?"✓ Completed":"▶ Start / Resume"); st.setOnClickListener(v->{if(!"completed".equals(t.optString("status")))startTimerForTask(idx);}); r.addView(st,new LinearLayout.LayoutParams(0,-2,1));
-        Button edit=btn("Edit"); edit.setOnClickListener(v->taskDialog(t,idx)); r.addView(edit);
+        Button edit=iconBtn("✎","Edit task"); edit.setOnClickListener(v->taskDialog(t,idx)); r.addView(edit);
         if(!"completed".equals(t.optString("status"))){Button done=btn("✓ End task");done.setOnClickListener(v->{completeTask(t);showPlan();});r.addView(done);}
         c.addView(r); parent.addView(c);
     }
 
     void showProgress(){
-        page=3; base("Progress","Understand where your time goes and whether it moves you forward.");
+        page=3; roadmapDetailOpen=false; base("Progress","Understand where your time goes and whether it moves you forward.");
         String today=date(); long todayMs=todaySessionMs(today)+activeElapsedMsForDate(today);
         LinearLayout day=card(); addText(day,"TODAY",11); addText(day,formatDuration(todayMs)+" tracked",28);
         addText(day,"Real sessions: "+realSessionCount(today),13); box().addView(day);
 
         LinearLayout road=card(); addText(road,"ROADMAP PROGRESS",18);
         if(roadmaps!=null&&roadmaps.length()>0){
-            for(int i=0;i<roadmaps.length();i++){JSONObject r=roadmaps.optJSONObject(i);if(r==null)continue;int total=topicCount(r);int done=completedFor(r.optString("id",roadmapId(r))).size();int pct=total==0?0:Math.round(done*100f/total);addText(road,r.optString("icon","📚")+"  "+roadmapName(r)+"   "+done+" / "+total+" · "+pct+"%",14);ProgressBar rb=new ProgressBar(this,null,android.R.attr.progressBarStyleHorizontal);rb.setMax(100);rb.setProgress(pct);road.addView(rb,new LinearLayout.LayoutParams(-1,dp(6)));}
+            for(int i=0;i<roadmaps.length();i++){JSONObject r=roadmaps.optJSONObject(i);if(r==null)continue;int total=topicCount(r);int done=completedFor(r.optString("id",roadmapId(r))).size();int pct=total==0?0:Math.round(done*100f/total);addText(road,r.optString("icon","📚")+"  "+roadmapName(r)+"   "+done+" / "+total+" "+roadmapItemLabel(r)+" · "+pct+"%",14);ProgressBar rb=new ProgressBar(this,null,android.R.attr.progressBarStyleHorizontal);rb.setMax(100);rb.setProgress(pct);road.addView(rb,new LinearLayout.LayoutParams(-1,dp(6)));}
         } else addText(road,"No roadmaps imported.",13); box().addView(road);
 
         long learning=0,project=0,work=0,distraction=0,other=0;
@@ -574,7 +580,16 @@ public class MainActivity extends Activity {
     String roadmapId(JSONObject r){String id=r.optString("id");if(!id.isEmpty())return id;return UUID.randomUUID().toString();}
     String roadmapName(JSONObject r){String n=r.optString("name");if(!n.isEmpty())return n;return r.optJSONObject("metadata")!=null?r.optJSONObject("metadata").optString("title","Roadmap"):"Roadmap";}
     String roadmapDescription(JSONObject r){return r.optString("description",r.optJSONObject("metadata")!=null?r.optJSONObject("metadata").optString("target","Editable learning roadmap"):"Editable learning roadmap");}
-    void normalizeRoadmap(JSONObject r,String fallbackId,String fallbackName,String icon){try{if(!r.has("id"))r.put("id",fallbackId);if(!r.has("name"))r.put("name",fallbackName);if(!r.has("icon"))r.put("icon",icon);if(!r.has("description"))r.put("description",roadmapDescription(r));if(!r.has("format"))r.put("format","devtrack-roadmap");if(!r.has("version"))r.put("version",1);}catch(Exception ignored){}}
+    void normalizeRoadmap(JSONObject r,String fallbackId,String fallbackName,String icon){
+        try{
+            if(!r.has("id")||r.optString("id").trim().isEmpty())r.put("id",fallbackId);
+            JSONObject meta=r.optJSONObject("metadata");String metaTitle=meta==null?"":meta.optString("title","").trim();
+            if(!r.has("name")||r.optString("name").trim().isEmpty()||"Imported Roadmap".equalsIgnoreCase(r.optString("name")))r.put("name",metaTitle.isEmpty()?fallbackName:metaTitle);
+            if(!r.has("icon")||r.optString("icon").trim().isEmpty())r.put("icon",icon);
+            if(!r.has("description")||r.optString("description").trim().isEmpty())r.put("description",meta==null?"Editable learning roadmap":meta.optString("target","Editable learning roadmap"));
+            if(!r.has("format"))r.put("format","devtrack-roadmap");if(!r.has("version"))r.put("version",1);
+        }catch(Exception ignored){}
+    }
     void setCurrentRoadmap(String id){currentRoadmapId=id;roadmap=findRoadmap(id);saveRoadmaps();}
     HashSet<String> completedFor(String id){HashSet<String> out=new HashSet<>();try{String raw=getSharedPreferences(PREFS,0).getString("completedByRoadmap","{}");JSONObject all=new JSONObject(raw);JSONArray a=all.optJSONArray(id);if(a!=null)for(int i=0;i<a.length();i++)out.add(a.optString(i));}catch(Exception ignored){}return out;}
     void saveCompletedFor(String id,HashSet<String> set){try{SharedPreferences sp=getSharedPreferences(PREFS,0);JSONObject all=new JSONObject(sp.getString("completedByRoadmap","{}"));JSONArray a=new JSONArray();for(String x:set)a.put(x);all.put(id,a);sp.edit().putString("completedByRoadmap",all.toString()).apply();completed.clear();completed.addAll(set);}catch(Exception ignored){}}
@@ -589,13 +604,15 @@ public class MainActivity extends Activity {
         EditText priority=new EditText(this);priority.setHint("Priority: low / medium / high");priority.setText(existing==null?"medium":existing.optString("priority","medium"));l.addView(priority);
         EditText difficulty=new EditText(this);difficulty.setHint("Difficulty: EASY / MEDIUM / HARD");difficulty.setText(existing==null?"":existing.optString("difficulty"));l.addView(difficulty);
         CheckBox interview=new CheckBox(this);interview.setText("Interview item");interview.setTextColor(Color.parseColor("#F4F6FB"));interview.setChecked(existing!=null&&existing.optBoolean("interview",false));l.addView(interview);
-        EditText subs=new EditText(this);subs.setHint("Tags / subtopics, comma separated");subs.setText(existing==null?"":joinJsonArray(existing.optJSONArray("subtopics")));l.addView(subs);
+        EditText subs=new EditText(this);subs.setHint("Subtopics, comma separated");subs.setText(existing==null?"":joinJsonArray(existing.optJSONArray("subtopics")));l.addView(subs);
+        EditText tags=new EditText(this);tags.setHint("Tags, comma separated");tags.setText(existing==null?"":joinJsonArray(existing.optJSONArray("tags")));l.addView(tags);
         EditText url=new EditText(this);url.setHint("Primary coding/resource URL");url.setInputType(android.text.InputType.TYPE_CLASS_TEXT|android.text.InputType.TYPE_TEXT_VARIATION_URI);url.setText(existing==null?"":existing.optString("url",""));l.addView(url);
         EditText links=new EditText(this);links.setHint("Extra links: Title | https://... (one per line)");links.setMinLines(2);links.setText(existing==null?"":linksToText(existing.optJSONArray("links")));l.addView(links);
         new AlertDialog.Builder(this).setTitle(existing==null?"Add roadmap item":"Edit roadmap item").setView(l).setPositiveButton("Save",(d,w)->{try{
             JSONObject t=existing==null?new JSONObject():existing;if(existing==null){t.put("id",UUID.randomUUID().toString());JSONArray ts=ph.optJSONArray("topics");if(ts==null){ts=new JSONArray();ph.put("topics",ts);}ts.put(t);}
             t.put("title",name.getText().toString().trim());t.put("priority",priority.getText().toString().trim());t.put("difficulty",difficulty.getText().toString().trim().toUpperCase(Locale.US));t.put("interview",interview.isChecked());
             String raw=subs.getText().toString().trim();JSONArray a=new JSONArray();if(!raw.isEmpty())for(String x:raw.split(","))if(!x.trim().isEmpty())a.put(x.trim());if(a.length()>0)t.put("subtopics",a);else t.remove("subtopics");
+            String tagRaw=tags.getText().toString().trim();JSONArray tagArray=new JSONArray();if(!tagRaw.isEmpty())for(String x:tagRaw.split(","))if(!x.trim().isEmpty())tagArray.put(x.trim());if(tagArray.length()>0)t.put("tags",tagArray);else t.remove("tags");
             String primary=url.getText().toString().trim();if(primary.isEmpty())t.remove("url");else t.put("url",primary);
             JSONArray extra=parseLinks(links.getText().toString());if(extra.length()>0)t.put("links",extra);else t.remove("links");
             saveRoadmaps();showRoadmap();
@@ -605,6 +622,10 @@ public class MainActivity extends Activity {
     JSONArray parseLinks(String raw){JSONArray out=new JSONArray();if(raw==null||raw.trim().isEmpty())return out;for(String line:raw.split("\\n")){String[] p=line.split("\\|",2);if(p.length<2)continue;String title=p[0].trim(),url=p[1].trim();if(url.isEmpty())continue;JSONObject o=new JSONObject();try{o.put("title",title.isEmpty()?"Resource":title);o.put("url",url);out.put(o);}catch(Exception ignored){}}return out;}
     String joinJsonArray(JSONArray a){if(a==null)return "";StringBuilder b=new StringBuilder();for(int i=0;i<a.length();i++){if(i>0)b.append(", ");b.append(a.optString(i));}return b.toString();}
     void addPhaseDialog(){LinearLayout l=new LinearLayout(this);l.setOrientation(LinearLayout.VERTICAL);EditText name=new EditText(this);name.setHint("Phase title");l.addView(name);EditText duration=new EditText(this);duration.setHint("Duration, e.g. Week 1");l.addView(duration);new AlertDialog.Builder(this).setTitle("Add phase").setView(l).setPositiveButton("Add",(d,w)->{try{JSONArray ps=roadmap.optJSONArray("phases");if(ps==null){ps=new JSONArray();roadmap.put("phases",ps);}JSONObject ph=new JSONObject();ph.put("id",UUID.randomUUID().toString());ph.put("number",ps.length()+1);ph.put("title",name.getText().toString().trim());ph.put("duration",duration.getText().toString().trim());ph.put("topics",new JSONArray());ps.put(ph);saveRoadmaps();showRoadmap();}catch(Exception e){toast("Could not add phase");}}).setNegativeButton("Cancel",null).show();}
+    String roadmapItemLabel(JSONObject r){
+        if(r!=null){String type=r.optString("itemType","").trim();if("question".equalsIgnoreCase(type))return "questions";String name=roadmapName(r).toLowerCase(Locale.US);if(name.contains("dsa")||name.contains("data structures")||name.contains("algorithm"))return "questions";}
+        return "topics";
+    }
     int topicCount(){return topicCount(roadmap);}
     int topicCount(JSONObject r){if(r==null)return 0;JSONArray ps=r.optJSONArray("phases");if(ps==null)return 0;int n=0;for(int i=0;i<ps.length();i++)n+=phaseTopics(ps.optJSONObject(i)).length();return n;}
     long todaySessionMs(String d){long n=0;for(JSONObject s:sessionObjectsForDate(d))n+=s.optLong("durationMs",0);return n;}
@@ -659,7 +680,7 @@ public class MainActivity extends Activity {
         JSONObject alarm=b.optJSONObject("alarm");if(alarm!=null&&alarm.optBoolean("enabled",false)){TextView al=tv("🔔",16);row.addView(al,new LinearLayout.LayoutParams(dp(34),-2));}
         boolean complete=isPlanCompletedForDate(b.optString("id"),date());
         Button st=primaryBtn(complete?"✓ Done":(hasOpenSessionForSchedule(b)?"▶ Resume":(isCurrentSchedule(b)?"▶ Start":"Start")));st.setOnClickListener(v->{if(!complete)startScheduleBlock(b);});row.addView(st);
-        Button edit=btn("Edit");edit.setOnClickListener(v->scheduleBlockDialog(b,-1));row.addView(edit);parent.addView(row);
+        Button edit=iconBtn("✎","Edit schedule block");edit.setOnClickListener(v->scheduleBlockDialog(b,-1));row.addView(edit);parent.addView(row);
     }
 
     void scheduleBlockDialog(JSONObject existing,int index){
@@ -696,7 +717,7 @@ public class MainActivity extends Activity {
     void importBackup(){Intent i=new Intent(Intent.ACTION_OPEN_DOCUMENT);i.setType("application/json");i.addCategory(Intent.CATEGORY_OPENABLE);startActivityForResult(i,300);}
     void exportBackup(){Intent i=new Intent(Intent.ACTION_CREATE_DOCUMENT);i.setType("application/json");i.putExtra(Intent.EXTRA_TITLE,"devtrack-backup-"+date()+".json");startActivityForResult(i,301);}
     @Override protected void onActivityResult(int req,int result,Intent data){super.onActivityResult(req,result,data);if(result!=RESULT_OK||data==null)return;try{
-        if(req==REQ_IMPORT){String raw=read(data.getData());JSONObject r=new JSONObject(raw);String fmt=r.optString("format");if(!"trackit-roadmap".equals(fmt)&&!"devtrack-roadmap".equals(fmt))throw new Exception("Unsupported roadmap format");normalizeRoadmap(r,UUID.randomUUID().toString(),"Imported Roadmap","📚");String id=r.optString("id");new AlertDialog.Builder(this).setTitle("Import roadmap").setMessage("Import "+roadmapName(r)+" as a new editable roadmap?").setPositiveButton("Import",(d,w)->{try{String finalId=findRoadmap(id)!=null?UUID.randomUUID().toString():id;r.put("id",finalId);roadmaps.put(r);setCurrentRoadmap(finalId);saveRoadmaps();showLearn();toast("Roadmap imported");}catch(Exception e){toast("Could not import roadmap: "+safeMessage(e));}}).setNegativeButton("Cancel",null).show();}
+        if(req==REQ_IMPORT){String raw=read(data.getData());JSONObject r=new JSONObject(raw);if(r.optJSONArray("phases")==null)throw new Exception("This JSON doesn't look like a roadmap (no 'phases' array found)");normalizeRoadmap(r,UUID.randomUUID().toString(),"Imported Roadmap","📚");String id=r.optString("id");new AlertDialog.Builder(this).setTitle("Import roadmap").setMessage("Import "+roadmapName(r)+" as a new editable roadmap?").setPositiveButton("Import",(d,w)->{try{String finalId=findRoadmap(id)!=null?UUID.randomUUID().toString():id;r.put("id",finalId);roadmaps.put(r);setCurrentRoadmap(finalId);saveRoadmaps();showLearn();toast("Roadmap imported");}catch(Exception e){toast("Could not import roadmap: "+safeMessage(e));}}).setNegativeButton("Cancel",null).show();}
         else if(req==REQ_EXPORT){write(data.getData(),roadmap.toString(2));toast("Roadmap exported");}
         else if(req==REQ_SCHEDULE_IMPORT){
             String raw=read(data.getData()); JSONObject sch=new JSONObject(raw); validateSchedule(sch);

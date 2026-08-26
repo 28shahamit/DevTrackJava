@@ -1,111 +1,111 @@
-# DevTrack — Native Android Java Test Build
+# DevTrack v8 — Dynamic Roadmaps + Unified Plan + Real Productivity Tracking
 
-This is the native Java/XML implementation of DevTrack.
+DevTrack is a local-first Android productivity and learning tracker.
 
-## Stack
+## v7 fixes
 
-- Java 17
-- Android SDK
-- XML layouts/views
-- Gradle
-- Native Android AlarmManager + NotificationManager
-- SharedPreferences + JSON for offline data
-- No AI
-- No backend
-- No Capacitor
+### Roadmaps
+- Multiple independent roadmaps are supported.
+- Java Backend and DSA use the same generic roadmap engine.
+- Roadmaps have editable name, icon and description.
+- Import/export roadmap JSON.
+- Each roadmap has independent completion/progress.
+- Phases/categories can contain normal learning topics or question-style items.
 
-## Application identity
+### DSA
+The bundled DSA roadmap is question-oriented with 15 categories and 421 practice questions:
 
-Display name: DevTrack
+Array, Matrix, String, Search and Sort, Linked List, Binary Trees, BST, Greedy, BackTracking, Stacks and Queues, Heap, Graph, Trie, Dynamic Programming and Bit Manipulation.
 
-Application ID: `com.javaroadmap.tracker`
+Each question supports:
+- `url` — primary coding/problem link
+- `links[]` — optional multiple resources
+- DONE
+- SAVE
+- LATER
+- TRACK
 
-The application ID is intentionally kept compatible with the existing app.
+### Productivity tracking
+- Daily schedule is shown directly in Today's Plan.
+- Automatic mode selects the current/next scheduled activity.
+- Manual mode lets the user choose the activity.
+- Start → live timer → Stop & Save or Complete.
+- Stop & Save keeps the activity resumable.
+- Resume continues the same activity and combines sessions.
+- Complete closes the activity and removes Resume.
+- Zero-duration sessions are not stored/displayed as `0m` records.
+- Today's tracking is grouped by activity instead of showing duplicate cards.
+- Progress counts only real saved sessions.
 
-## Build on GitHub
 
-Push this repository to GitHub. The included GitHub Actions workflow builds:
+## v8 fixes
 
-`app/build/outputs/apk/debug/app-debug.apk`
+### UI and navigation
+- Added a visible Back button on roadmap detail screens; Android back also returns to Learn.
+- Replaced large Edit buttons in roadmap, phase, schedule and task rows with compact pencil controls.
+- Today's full plan is shown in one place only: the Plan tab is the source of truth. Home no longer duplicates the full daily plan.
+- Home provides a single shortcut to open today's plan instead of rendering a second copy.
 
-The artifact is named `devtrack-debug-apk`.
+### Tracking list layout
+- Today's tracked activities now use content-sized rows/card height.
+- Removed the large empty vertical area that could appear between tracked activities.
+- Empty state now reads `No activities tracked today.` and the card ends immediately.
 
-## Current native Java MVP
+### Roadmap data
+- Imported roadmaps with an `Imported Roadmap` placeholder name now use their JSON metadata title when available.
+- Roadmap progress labels are dynamic (`topics` vs `questions`) instead of assuming every roadmap is a topic roadmap.
+- DSA tags are displayed and editable in addition to subtopics.
 
-Implemented:
+## Roadmap JSON
 
-- Home dashboard
-- Roadmap with topic percentages
-- Existing Java backend roadmap data
-- Roadmap topic completion
-- Roadmap JSON import/export
-- Tasks
-- Estimate / remaining / actual effort
-- Planner
-- Task timer
-- Study sessions
-- Daily study time
-- Progress
-- Full JSON backup/restore
-- Reset data
-- Native Android reminder notifications
-- Background alarm scheduling
-- Alarm rescheduling after device boot
-- Test alarm
-- No AI code
-
-This is deliberately a clean native baseline for comparison against the existing Capacitor implementation.
-
-## Important Android behavior
-
-Android 13+ requires notification permission. Exact alarms can also be restricted by Android; the app falls back to `setAndAllowWhileIdle` if exact-alarm permission is unavailable.
-
-The notification channel is `task_reminders_v2`.
-
-## Reliability / polish update
-
-- Defensive startup and roadmap validation
-- Safe handling when imported roadmap data is missing or malformed
-- Startup recovery screen instead of a null-data crash
-- Branded DevTrack launcher icon with adaptive Android icon support
-- Native reminder channel uses the device alarm ringtone where available
-- Cleaner native bottom navigation styling
-
-## Daily schedule JSON
-
-DevTrack supports importing and exporting a daily schedule from **Plan → Import Daily Schedule JSON**.
-Each block can define its own `color` and alarm configuration:
+Minimum structure:
 
 ```json
 {
-  "id": "java",
-  "title": "Java Backend",
-  "start": "20:00",
-  "end": "21:30",
-  "category": "LEARNING",
-  "color": "#7C5CFC",
-  "track": true,
-  "days": ["MONDAY", "WEDNESDAY", "FRIDAY"],
-  "alarm": {
-    "enabled": true,
-    "minutesBefore": 10,
-    "sound": "alarm"
-  }
+  "format": "devtrack-roadmap",
+  "version": 1,
+  "id": "dsa",
+  "name": "DSA",
+  "icon": "🧠",
+  "description": "Interview preparation",
+  "kind": "questions",
+  "phases": [
+    {
+      "id": "array",
+      "number": 1,
+      "title": "Array",
+      "color": "#E67E5F",
+      "topics": [
+        {
+          "id": "array-001",
+          "title": "Reverse the array",
+          "difficulty": "EASY",
+          "url": "https://example.com/problem",
+          "links": [
+            {"title": "LeetCode", "url": "https://example.com"},
+            {"title": "Explanation", "url": "https://example.com"}
+          ]
+        }
+      ]
+    }
+  ]
 }
 ```
 
-The schedule UI uses the block color as a visual timeline accent. Alarm settings are applied when the schedule is imported. Alarms use the device alarm ringtone through the native Android notification channel and are rescheduled after reboot.
+The app accepts either a single `url` or multiple `links`.
 
-## Productivity tracking
+## Daily schedule JSON
 
-DevTrack uses a persistent timestamp-based timer rather than a blocking timer dialog.
+The existing `devtrack-daily-schedule` format remains supported, including `color`, `track`, `days` and alarm settings.
 
-- Start a planned activity, task, or manual activity.
-- Stop & Save creates a session without completing the task.
-- Resume continues the same task/plan later and all sessions are combined into the task total.
-- Complete/End Task is separate from Stop.
-- Automatic from Plan mode uses today's schedule as the tracking queue.
-- Manual mode lets the user choose an activity and category.
-- Categories are selected from a dropdown.
-- Schedule blocks can have colors and alarm settings in Daily Schedule JSON.
-- The active timer survives normal navigation/backgrounding because the start timestamp is persisted locally.
+## Build
+
+The project intentionally does not include generated APK/build output, and this checkout does not include a Gradle wrapper.
+
+Push to `main` (or run the workflow manually) and GitHub Actions will build the debug APK automatically — see `.github/workflows/build-apk.yml`. Download it from the Actions tab under the `app-debug-apk` artifact.
+
+To build locally, install Gradle 8.7+ and the Android SDK (platform 35, build-tools 35.0.0), then run:
+
+```bash
+gradle assembleDebug
+```
