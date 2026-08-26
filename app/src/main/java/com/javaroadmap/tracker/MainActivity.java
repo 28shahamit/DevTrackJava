@@ -35,7 +35,6 @@ public class MainActivity extends Activity {
     HashSet<String> completed=new HashSet<>();
     TextView title;
     int page=0;
-    boolean roadmapDetailOpen=false;
     String startupError;
     final Handler uiHandler = new Handler(Looper.getMainLooper());
     TextView timerText, timerTitle, timerMeta;
@@ -61,6 +60,42 @@ public class MainActivity extends Activity {
         b.setMinWidth(dp(44)); b.setMinimumWidth(dp(44));
         b.setPadding(dp(8),dp(8),dp(8),dp(8)); return b;
     }
+    Button dangerIconBtn(String icon,String description){
+        Button b=iconBtn(icon,description); b.setTextColor(Color.parseColor("#FF6B6B")); return b;
+    }
+
+    static final String[] CATEGORY_NAMES={"WORK","LEARNING","PROJECT","CAREER","HEALTH","PERSONAL","FAMILY","COMMUTE","FOOD","SLEEP","BREAK","ENTERTAINMENT","DISTRACTION","OTHER"};
+    int categoryColor(String cat){
+        if(cat==null)cat="OTHER";
+        switch(cat.toUpperCase(Locale.US)){
+            case "WORK": return Color.parseColor("#4F7CFF");
+            case "LEARNING": return Color.parseColor("#34C77B");
+            case "PROJECT": return Color.parseColor("#FFB84F");
+            case "CAREER": return Color.parseColor("#B983FF");
+            case "HEALTH": return Color.parseColor("#FF6B6B");
+            case "PERSONAL": return Color.parseColor("#4FD1FF");
+            case "FAMILY": return Color.parseColor("#FF8FB1");
+            case "COMMUTE": return Color.parseColor("#A0A4AE");
+            case "FOOD": return Color.parseColor("#FFD166");
+            case "SLEEP": return Color.parseColor("#7A7FEA");
+            case "BREAK": return Color.parseColor("#6EE7B7");
+            case "ENTERTAINMENT": return Color.parseColor("#F472B6");
+            case "DISTRACTION": return Color.parseColor("#F87171");
+            default: return Color.parseColor("#9AA4B8");
+        }
+    }
+    View dot(int color,int sizeDp){
+        View v=new View(this);
+        android.graphics.drawable.GradientDrawable gd=new android.graphics.drawable.GradientDrawable();
+        gd.setShape(android.graphics.drawable.GradientDrawable.OVAL); gd.setColor(color);
+        v.setBackground(gd); return v;
+    }
+    LinearLayout labelWithDot(String text,int color,float size){
+        LinearLayout r=row();
+        r.addView(dot(color,10),new LinearLayout.LayoutParams(dp(10),dp(10)){{setMargins(0,0,dp(6),0);}});
+        r.addView(tv(text,size),new LinearLayout.LayoutParams(-2,-2));
+        return r;
+    }
     LinearLayout card(){
         LinearLayout l=new LinearLayout(this); l.setOrientation(LinearLayout.VERTICAL);
         l.setPadding(dp(16),dp(14),dp(16),dp(14)); l.setBackgroundResource(R.drawable.card_bg);
@@ -84,7 +119,7 @@ public class MainActivity extends Activity {
     }
 
     @Override public void onBackPressed(){
-        if(page==1 && roadmapDetailOpen){showLearn();return;}
+        if(page==1 && roadmap!=null){showLearn();return;}
         super.onBackPressed();
     }
 
@@ -170,7 +205,7 @@ public class MainActivity extends Activity {
     LinearLayout box(){ return (LinearLayout)content.getTag(); }
 
     void showHome(){
-        page=0; roadmapDetailOpen=false; base("DevTrack","Your day, your time, your progress");
+        page=0; base("DevTrack","Your day, your time, your progress");
         String today=date();
         long tracked=todaySessionMs(today)+activeElapsedMsForDate(today);
         int total=topicCount(), done=completedFor(currentRoadmapId).size(), pct=total==0?0:Math.round(done*100f/total);
@@ -227,7 +262,7 @@ public class MainActivity extends Activity {
         View stripe=new View(this); int color; try{color=Color.parseColor(b.optString("color","#4F7CFF"));}catch(Exception e){color=Color.parseColor("#4F7CFF");}
         stripe.setBackgroundColor(color); c.addView(stripe,new LinearLayout.LayoutParams(dp(5),dp(66)));
         LinearLayout mid=new LinearLayout(this); mid.setOrientation(LinearLayout.VERTICAL); mid.setPadding(dp(10),0,dp(8),0);
-        addText(mid,b.optString("start","")+" – "+b.optString("end",""),12); addText(mid,b.optString("title","Planned activity"),16); addText(mid,b.optString("category","OTHER")+(b.optBoolean("track",true)?" · tracked":""),11);
+        addText(mid,b.optString("start","")+" – "+b.optString("end",""),12); addText(mid,blockTitle(b),16); mid.addView(labelWithDot(b.optString("category","OTHER")+(b.optBoolean("track",true)?" · tracked":""),categoryColor(b.optString("category","OTHER")),11));
         c.addView(mid,new LinearLayout.LayoutParams(0,-2,1));
         boolean complete=isPlanCompletedForDate(b.optString("id"),date());
         Button st=primaryBtn(complete?"✓ Done":(hasOpenSessionForSchedule(b)?"▶ Resume": "▶ Start"));
@@ -245,12 +280,13 @@ public class MainActivity extends Activity {
         r.addView(mid,new LinearLayout.LayoutParams(0,-2,1));
         Button st=primaryBtn("completed".equals(t.optString("status"))?"✓ Done":"▶ Start");
         st.setOnClickListener(v->{ if(!"completed".equals(t.optString("status"))) startTimerForTask(index); }); r.addView(st);
+        Button del=dangerIconBtn("🗑","Delete task"); del.setOnClickListener(v->deleteTask(index)); r.addView(del);
         cb.setOnClickListener(v->{try{if(cb.isChecked()){ if(getActiveTimer()!=null&&t.optString("id").equals(getActiveTimer().optString("taskId")))stopActiveTimer(true); else {completeTask(t);showHome();}}else{t.put("status","not_started");t.remove("completedAt");saveState();showHome();}}catch(Exception ignored){}});
         parent.addView(r);
     }
 
     void showLearn(){
-        page=1; roadmapDetailOpen=false; base("Learn","Dynamic roadmaps — import, edit and track each learning path separately.");
+        page=1; base("Learn","Dynamic roadmaps — import, edit and track each learning path separately.");
         if(roadmaps==null||roadmaps.length()==0){
             LinearLayout empty=card(); addText(empty,"No roadmaps yet",20); addText(empty,"Import a roadmap JSON to get started.",13); Button imp=primaryBtn("📥 Import Roadmap JSON"); imp.setOnClickListener(v->importRoadmap()); empty.addView(imp); box().addView(empty); return;
         }
@@ -273,11 +309,11 @@ public class MainActivity extends Activity {
         LinearLayout row=row();
         Button open=primaryBtn(id.equals(currentRoadmapId)?"✓ Open roadmap":"Open roadmap"); open.setOnClickListener(v->{setCurrentRoadmap(id);showRoadmap();}); row.addView(open,new LinearLayout.LayoutParams(0,-2,1));
         Button edit=iconBtn("✎","Edit roadmap"); edit.setOnClickListener(v->editRoadmapDialog(r)); row.addView(edit);
+        Button del=dangerIconBtn("🗑","Delete roadmap"); del.setOnClickListener(v->deleteRoadmap(r)); row.addView(del);
         c.addView(row); parent.addView(c);
     }
     void showRoadmap(){
         if(roadmap==null){showLearn();return;}
-        page=1; roadmapDetailOpen=true;
         baseWithBack(roadmapName(roadmap),roadmapDescription(roadmap),()->showLearn());
         LinearLayout c=card(); addText(c,"ROADMAP PROGRESS",11);
         int total=topicCount(), done=completedFor(currentRoadmapId).size(), pct=total==0?0:Math.round(done*100f/total);
@@ -300,7 +336,7 @@ public class MainActivity extends Activity {
             addText(pc,ph.optString("duration","")+" · "+topics.length()+" items · "+d+" done · "+pp+"%",12);
             ProgressBar bar=new ProgressBar(this,null,android.R.attr.progressBarStyleHorizontal); bar.setMax(100); bar.setProgress(pp); pc.addView(bar,new LinearLayout.LayoutParams(-1,dp(8)));
             LinearLayout list=new LinearLayout(this); list.setOrientation(LinearLayout.VERTICAL); pc.addView(list);
-            LinearLayout phaseActions=row(); Button ep=iconBtn("✎","Edit phase"); ep.setOnClickListener(v->editPhaseDialog(ph)); phaseActions.addView(ep); Button at=btn("＋ Add item"); at.setOnClickListener(v->editTopicDialog(ph,null)); phaseActions.addView(at,new LinearLayout.LayoutParams(0,-2,1)); list.addView(phaseActions);
+            LinearLayout phaseActions=row(); Button ep=iconBtn("✎","Edit phase"); ep.setOnClickListener(v->editPhaseDialog(ph)); phaseActions.addView(ep); Button dp=dangerIconBtn("🗑","Delete phase"); dp.setOnClickListener(v->deletePhase(ph)); phaseActions.addView(dp); Button at=btn("＋ Add item"); at.setOnClickListener(v->editTopicDialog(ph,null)); phaseActions.addView(at,new LinearLayout.LayoutParams(0,-2,1)); list.addView(phaseActions);
             boolean expanded=ph.optBoolean("expanded",false); list.setVisibility(expanded?View.VISIBLE:View.GONE);
             phaseHead.setOnClickListener(v->{boolean show=list.getVisibility()!=View.VISIBLE;list.setVisibility(show?View.VISIBLE:View.GONE);try{ph.put("expanded",show);saveRoadmaps();}catch(Exception ignored){}});
             for(int j=0;j<topics.length();j++){JSONObject t=topics.optJSONObject(j);if(t!=null)addTopicRow(list,t,ph);}
@@ -332,7 +368,7 @@ public class MainActivity extends Activity {
         boolean saved=t.optBoolean("saved",false); Button save=btn(saved?"★ Saved":"☆ Save"); save.setOnClickListener(v->{try{t.put("saved",!t.optBoolean("saved",false));saveRoadmaps();showRoadmap();}catch(Exception ignored){}});actions.addView(save,new LinearLayout.LayoutParams(0,-2,1));
         boolean later=t.optBoolean("later",false); Button laterBtn=btn(later?"↺ Later":"Later"); laterBtn.setOnClickListener(v->{try{t.put("later",!t.optBoolean("later",false));saveRoadmaps();showRoadmap();}catch(Exception ignored){}});actions.addView(laterBtn,new LinearLayout.LayoutParams(0,-2,1));
         c.addView(actions);
-        LinearLayout secondary=row(); Button track=btn("▶ Track");track.setOnClickListener(v->startPersistentTimer(t.optString("title","Roadmap item"),"LEARNING",null,null));secondary.addView(track,new LinearLayout.LayoutParams(0,-2,1)); Button edit=iconBtn("✎","Edit roadmap item");edit.setOnClickListener(v->editTopicDialog(phase,t));secondary.addView(edit);c.addView(secondary);
+        LinearLayout secondary=row(); Button track=btn("▶ Track");track.setOnClickListener(v->startPersistentTimer(t.optString("title","Roadmap item"),"LEARNING",null,null));secondary.addView(track,new LinearLayout.LayoutParams(0,-2,1)); Button edit=iconBtn("✎","Edit roadmap item");edit.setOnClickListener(v->editTopicDialog(phase,t));secondary.addView(edit); Button del=dangerIconBtn("🗑","Delete roadmap item");del.setOnClickListener(v->deleteTopic(phase,t));secondary.addView(del);c.addView(secondary);
         cb.setOnClickListener(v->{HashSet<String> set=completedFor(currentRoadmapId);if(cb.isChecked())set.add(id);else set.remove(id);saveCompletedFor(currentRoadmapId,set);showRoadmap();});
         list.addView(c);
     }
@@ -348,7 +384,7 @@ public class MainActivity extends Activity {
     }
 
     void showPlan(){
-        page=2; roadmapDetailOpen=false; base("Plan","Your schedule is the source of truth for today's planned activities.");
+        page=2; base("Plan","Your schedule is the source of truth for today's planned activities.");
         LinearLayout actions=card(); addText(actions,"DAILY SCHEDULE",19);
         Button imp=primaryBtn("📥 Import Daily Schedule JSON"); imp.setOnClickListener(v->importDailySchedule()); actions.addView(imp);
         Button exp=btn("📤 Export Daily Schedule JSON"); exp.setOnClickListener(v->exportDailySchedule()); actions.addView(exp);
@@ -391,12 +427,13 @@ public class MainActivity extends Activity {
         LinearLayout r=row();
         Button st=primaryBtn("completed".equals(t.optString("status"))?"✓ Completed":"▶ Start / Resume"); st.setOnClickListener(v->{if(!"completed".equals(t.optString("status")))startTimerForTask(idx);}); r.addView(st,new LinearLayout.LayoutParams(0,-2,1));
         Button edit=iconBtn("✎","Edit task"); edit.setOnClickListener(v->taskDialog(t,idx)); r.addView(edit);
+        Button del=dangerIconBtn("🗑","Delete task"); del.setOnClickListener(v->deleteTask(idx)); r.addView(del);
         if(!"completed".equals(t.optString("status"))){Button done=btn("✓ End task");done.setOnClickListener(v->{completeTask(t);showPlan();});r.addView(done);}
         c.addView(r); parent.addView(c);
     }
 
     void showProgress(){
-        page=3; roadmapDetailOpen=false; base("Progress","Understand where your time goes and whether it moves you forward.");
+        page=3; base("Progress","Understand where your time goes and whether it moves you forward.");
         String today=date(); long todayMs=todaySessionMs(today)+activeElapsedMsForDate(today);
         LinearLayout day=card(); addText(day,"TODAY",11); addText(day,formatDuration(todayMs)+" tracked",28);
         addText(day,"Real sessions: "+realSessionCount(today),13); box().addView(day);
@@ -460,17 +497,32 @@ public class MainActivity extends Activity {
             }).setNegativeButton("Cancel",null).show();
     }
 
+    LinearLayout categoryRowView(String cat,View convert){
+        LinearLayout row; TextView label;
+        if(convert instanceof LinearLayout && convert.getTag()instanceof TextView){row=(LinearLayout)convert;label=(TextView)convert.getTag();}
+        else{
+            row=new LinearLayout(this); row.setOrientation(LinearLayout.HORIZONTAL); row.setGravity(Gravity.CENTER_VERTICAL);
+            row.setPadding(dp(12),dp(10),dp(12),dp(10));
+            View d=dot(Color.WHITE,10); LinearLayout.LayoutParams dp2=new LinearLayout.LayoutParams(dp(10),dp(10)); dp2.setMargins(0,0,dp(8),0); row.addView(d,dp2);
+            label=new TextView(this); label.setTextColor(Color.parseColor("#F4F6FB")); label.setTextSize(14); row.addView(label);
+            row.setTag(label);
+        }
+        ((View)row.getChildAt(0)).setBackgroundColor(0); // reset, will re-tint below
+        android.graphics.drawable.GradientDrawable gd=new android.graphics.drawable.GradientDrawable(); gd.setShape(android.graphics.drawable.GradientDrawable.OVAL); gd.setColor(categoryColor(cat));
+        row.getChildAt(0).setBackground(gd);
+        label.setText(cat);
+        return row;
+    }
     ArrayAdapter<String> categoryAdapter(){
-        final String[] cats={"WORK","LEARNING","PROJECT","CAREER","HEALTH","PERSONAL","FAMILY","COMMUTE","FOOD","SLEEP","BREAK","ENTERTAINMENT","DISTRACTION","OTHER"};
-        return new ArrayAdapter<String>(this,android.R.layout.simple_spinner_item,cats){
-            @Override public View getView(int position,View convertView,android.view.ViewGroup parent){TextView v=(TextView)super.getView(position,convertView,parent);v.setTextColor(Color.parseColor("#F4F6FB"));v.setTextSize(14);v.setPadding(dp(12),dp(10),dp(12),dp(10));return v;}
-            @Override public View getDropDownView(int position,View convertView,android.view.ViewGroup parent){TextView v=(TextView)super.getDropDownView(position,convertView,parent);v.setTextColor(Color.parseColor("#F4F6FB"));v.setBackgroundColor(Color.parseColor("#1B1F2A"));v.setTextSize(14);v.setPadding(dp(12),dp(10),dp(12),dp(10));return v;}
+        return new ArrayAdapter<String>(this,android.R.layout.simple_spinner_item,CATEGORY_NAMES){
+            @Override public View getView(int position,View convertView,android.view.ViewGroup parent){LinearLayout v=categoryRowView(getItem(position),convertView);v.setBackgroundColor(Color.parseColor("#1B202B"));return v;}
+            @Override public View getDropDownView(int position,View convertView,android.view.ViewGroup parent){LinearLayout v=categoryRowView(getItem(position),convertView);v.setBackgroundColor(Color.parseColor("#1B1F2A"));return v;}
         };
     }
 
     Spinner categorySpinner(String selected){
-        Spinner sp=new Spinner(this); sp.setAdapter(categoryAdapter()); String[] cats={"WORK","LEARNING","PROJECT","CAREER","HEALTH","PERSONAL","FAMILY","COMMUTE","FOOD","SLEEP","BREAK","ENTERTAINMENT","DISTRACTION","OTHER"};
-        for(int i=0;i<cats.length;i++)if(cats[i].equals(selected)){sp.setSelection(i);break;} return sp;
+        Spinner sp=new Spinner(this); sp.setAdapter(categoryAdapter());
+        for(int i=0;i<CATEGORY_NAMES.length;i++)if(CATEGORY_NAMES[i].equals(selected)){sp.setSelection(i);break;} return sp;
     }
 
     void activityLogDialog(){
@@ -673,34 +725,310 @@ public class MainActivity extends Activity {
     boolean hasTrackedSessionForSchedule(JSONObject b){String id=b.optString("id","");if(id.isEmpty())return false;for(int i=0;i<sessions.length();i++){JSONObject s=sessions.optJSONObject(i);if(s!=null&&date().equals(s.optString("date"))&&id.equals(s.optString("scheduleId")))return true;}return false;}
 
     void addScheduleBlockRow(LinearLayout parent,JSONObject b){
+        boolean overlap=blockOverlapsAny(b);
+        LinearLayout outer=new LinearLayout(this); outer.setOrientation(LinearLayout.VERTICAL);
         LinearLayout row=row(); row.setPadding(0,dp(7),0,dp(7));
         View stripe=new View(this);int color;try{color=Color.parseColor(b.optString("color","#4F7CFF"));}catch(Exception e){color=Color.parseColor("#4F7CFF");}stripe.setBackgroundColor(color);row.addView(stripe,new LinearLayout.LayoutParams(dp(6),dp(72)));
         LinearLayout mid=new LinearLayout(this);mid.setOrientation(LinearLayout.VERTICAL);mid.setPadding(dp(12),0,dp(8),0);
-        addText(mid,b.optString("start")+" – "+b.optString("end"),12);addText(mid,b.optString("title"),16);addText(mid,b.optString("category","OTHER")+(b.optBoolean("track",true)?" · tracked":""),11);row.addView(mid,new LinearLayout.LayoutParams(0,-2,1));
+        addText(mid,b.optString("start")+" – "+b.optString("end"),12);
+        TextView titleTv=tv(blockTitle(b),16); if(b.optString("title","").trim().isEmpty())titleTv.setTextColor(Color.parseColor("#9AA4B8")); mid.addView(titleTv,new LinearLayout.LayoutParams(-1,-2));
+        mid.addView(labelWithDot(b.optString("category","OTHER")+(b.optBoolean("track",true)?" · tracked":""),categoryColor(b.optString("category","OTHER")),11));
+        if(overlap){TextView warn=tv("⚠ Overlaps another block",11);warn.setTextColor(Color.parseColor("#FFB84F"));mid.addView(warn);}
+        row.addView(mid,new LinearLayout.LayoutParams(0,-2,1));
         JSONObject alarm=b.optJSONObject("alarm");if(alarm!=null&&alarm.optBoolean("enabled",false)){TextView al=tv("🔔",16);row.addView(al,new LinearLayout.LayoutParams(dp(34),-2));}
         boolean complete=isPlanCompletedForDate(b.optString("id"),date());
         Button st=primaryBtn(complete?"✓ Done":(hasOpenSessionForSchedule(b)?"▶ Resume":(isCurrentSchedule(b)?"▶ Start":"Start")));st.setOnClickListener(v->{if(!complete)startScheduleBlock(b);});row.addView(st);
-        Button edit=iconBtn("✎","Edit schedule block");edit.setOnClickListener(v->scheduleBlockDialog(b,-1));row.addView(edit);parent.addView(row);
+        Button edit=iconBtn("✎","Edit schedule block");edit.setOnClickListener(v->scheduleBlockDialog(b,-1));row.addView(edit);
+        Button del=dangerIconBtn("🗑","Delete schedule block");del.setOnClickListener(v->deleteScheduleBlock(b));row.addView(del);
+        row.setOnLongClickListener(v->{scheduleBlockQuickMenu(b);return true;});
+        outer.addView(row);
+        if(overlap){View div=new View(this);div.setBackgroundColor(Color.parseColor("#332A1E"));outer.addView(div,new LinearLayout.LayoutParams(-1,dp(1)));}
+        parent.addView(outer);
+    }
+    void scheduleBlockQuickMenu(JSONObject b){
+        String[] opts={"▶ Start","✎ Edit","🗑 Delete","Cancel"};
+        new AlertDialog.Builder(this).setTitle(blockTitle(b)).setItems(opts,(d,w)->{
+            if(w==0)startScheduleBlock(b);
+            else if(w==1)scheduleBlockDialog(b,-1);
+            else if(w==2)deleteScheduleBlock(b);
+        }).show();
+    }
+
+    static final String[] SWATCH_COLORS={"#4F7CFF","#34C77B","#FFB84F","#B983FF","#FF6B6B","#4FD1FF","#FF8FB1","#A0A4AE","#FFD166","#7A7FEA","#6EE7B7","#F472B6"};
+    static final String[] DAY_CODES={"MONDAY","TUESDAY","WEDNESDAY","THURSDAY","FRIDAY","SATURDAY","SUNDAY"};
+    static final String[] DAY_SHORT={"Mon","Tue","Wed","Thu","Fri","Sat","Sun"};
+    static final String[] ALARM_MIN_OPTIONS={"5","10","15","30","45","60"};
+
+    /** A read-only EditText that opens a native TimePickerDialog when tapped. Stores value as HH:mm (24h). */
+    EditText timePickerField(String hint,String initial){
+        EditText e=new EditText(this); e.setHint(hint); e.setText(initial==null?"":initial);
+        e.setFocusable(false); e.setClickable(true); e.setCursorVisible(false);
+        e.setOnClickListener(v->{
+            int h=8,m=0;
+            String cur=e.getText().toString().trim();
+            if(cur.matches("^\\d{1,2}:\\d{2}$")){String[] p=cur.split(":");try{h=Integer.parseInt(p[0]);m=Integer.parseInt(p[1]);}catch(Exception ignored){}}
+            new TimePickerDialog(this,(view,hh,mm)->e.setText(String.format(Locale.US,"%02d:%02d",hh,mm)),h,m,true).show();
+        });
+        return e;
+    }
+
+    /** Toggleable day-of-week chips. Returns the container; selected days are tracked in `selected`. */
+    LinearLayout dayChipsRow(boolean[] selected){
+        LinearLayout r=new LinearLayout(this); r.setOrientation(LinearLayout.HORIZONTAL); r.setPadding(0,dp(6),0,dp(6));
+        for(int i=0;i<7;i++){
+            final int idx=i;
+            TextView chip=tv(DAY_SHORT[i],12); chip.setGravity(Gravity.CENTER); chip.setPadding(dp(4),dp(8),dp(4),dp(8));
+            LinearLayout.LayoutParams lp=new LinearLayout.LayoutParams(0,dp(36),1); lp.setMargins(dp(2),0,dp(2),0); chip.setLayoutParams(lp);
+            Runnable refresh=()->{
+                android.graphics.drawable.GradientDrawable gd=new android.graphics.drawable.GradientDrawable();
+                gd.setCornerRadius(dp(8)); gd.setColor(Color.parseColor(selected[idx]?"#4F8EF7":"#1B202B"));
+                gd.setStroke(dp(1),Color.parseColor(selected[idx]?"#4F8EF7":"#303746")); chip.setBackground(gd);
+                chip.setTextColor(Color.parseColor(selected[idx]?"#FFFFFF":"#9AA4B8"));
+            };
+            refresh.run();
+            chip.setOnClickListener(v->{selected[idx]=!selected[idx];refresh.run();});
+            r.addView(chip);
+        }
+        return r;
+    }
+
+    /** Color swatch picker. holder[0] carries the selected hex; returns the container view. */
+    LinearLayout colorSwatchRow(String[] holder){
+        LinearLayout r=new LinearLayout(this); r.setOrientation(LinearLayout.HORIZONTAL); r.setPadding(0,dp(6),0,dp(6));
+        HorizontalScrollView sc=new HorizontalScrollView(this); sc.setHorizontalScrollBarEnabled(false);
+        LinearLayout inner=new LinearLayout(this); inner.setOrientation(LinearLayout.HORIZONTAL);
+        View[] swatchViews=new View[SWATCH_COLORS.length];
+        Runnable[] refreshAll=new Runnable[1];
+        for(int i=0;i<SWATCH_COLORS.length;i++){
+            final String c=SWATCH_COLORS[i];
+            View sw=new View(this);
+            LinearLayout.LayoutParams lp=new LinearLayout.LayoutParams(dp(36),dp(36)); lp.setMargins(dp(4),dp(4),dp(4),dp(4)); sw.setLayoutParams(lp);
+            swatchViews[i]=sw;
+            sw.setOnClickListener(v->{holder[0]=c;refreshAll[0].run();});
+            inner.addView(sw);
+        }
+        refreshAll[0]=()->{
+            for(int i=0;i<SWATCH_COLORS.length;i++){
+                boolean sel=SWATCH_COLORS[i].equalsIgnoreCase(holder[0]);
+                android.graphics.drawable.GradientDrawable gd=new android.graphics.drawable.GradientDrawable();
+                gd.setShape(android.graphics.drawable.GradientDrawable.OVAL); gd.setColor(Color.parseColor(SWATCH_COLORS[i]));
+                gd.setStroke(sel?dp(3):0,Color.WHITE);
+                swatchViews[i].setBackground(gd);
+            }
+        };
+        refreshAll[0].run();
+        sc.addView(inner); r.addView(sc,new LinearLayout.LayoutParams(-1,-2));
+        return r;
+    }
+
+    Spinner alarmMinutesSpinner(int selectedValue){
+        Spinner sp=new Spinner(this);
+        ArrayAdapter<String> ad=new ArrayAdapter<String>(this,android.R.layout.simple_spinner_item,ALARM_MIN_OPTIONS){
+            @Override public View getView(int p,View cv,android.view.ViewGroup pr){TextView v=(TextView)super.getView(p,cv,pr);v.setText(getItem(p)+" min before");v.setTextColor(Color.parseColor("#F4F6FB"));v.setPadding(dp(12),dp(10),dp(12),dp(10));return v;}
+            @Override public View getDropDownView(int p,View cv,android.view.ViewGroup pr){TextView v=(TextView)super.getDropDownView(p,cv,pr);v.setText(getItem(p)+" min before");v.setTextColor(Color.parseColor("#F4F6FB"));v.setBackgroundColor(Color.parseColor("#1B1F2A"));v.setPadding(dp(12),dp(10),dp(12),dp(10));return v;}
+        };
+        sp.setAdapter(ad);
+        String target=String.valueOf(selectedValue);
+        int best=1; for(int i=0;i<ALARM_MIN_OPTIONS.length;i++)if(ALARM_MIN_OPTIONS[i].equals(target)){best=i;break;}
+        sp.setSelection(best);
+        return sp;
     }
 
     void scheduleBlockDialog(JSONObject existing,int index){
-        LinearLayout l=new LinearLayout(this);l.setOrientation(LinearLayout.VERTICAL);l.setPadding(dp(8),0,dp(8),0);
-        EditText titleE=new EditText(this);titleE.setHint("Title");titleE.setText(existing==null?"":existing.optString("title"));l.addView(titleE);
-        EditText startE=new EditText(this);startE.setHint("Start HH:mm");startE.setText(existing==null?"20:00":existing.optString("start"));l.addView(startE);
-        EditText endE=new EditText(this);endE.setHint("End HH:mm");endE.setText(existing==null?"21:00":existing.optString("end"));l.addView(endE);
+        LinearLayout l=new LinearLayout(this);l.setOrientation(LinearLayout.VERTICAL);l.setPadding(dp(16),dp(8),dp(16),dp(8));
+
+        addText(l,"Title",11);
+        EditText titleE=new EditText(this);titleE.setHint("e.g. Backend Stream API");titleE.setText(existing==null?"":existing.optString("title"));l.addView(titleE);
+        TextView titleErr=tv("",11); titleErr.setTextColor(Color.parseColor("#FF6B6B")); titleErr.setVisibility(View.GONE); l.addView(titleErr);
+
+        addText(l,"Time",11);
+        LinearLayout timeRow=row();
+        EditText startE=timePickerField("Start",existing==null?"20:00":existing.optString("start","20:00"));
+        EditText endE=timePickerField("End",existing==null?"21:00":existing.optString("end","21:00"));
+        timeRow.addView(startE,new LinearLayout.LayoutParams(0,-2,1));
+        addSpace(timeRow,12);
+        timeRow.addView(endE,new LinearLayout.LayoutParams(0,-2,1));
+        l.addView(timeRow);
+        TextView timeErr=tv("",11); timeErr.setTextColor(Color.parseColor("#FF6B6B")); timeErr.setVisibility(View.GONE); l.addView(timeErr);
+
+        addText(l,"Category",11);
         Spinner cat=categorySpinner(existing==null?"LEARNING":existing.optString("category","OTHER"));l.addView(cat);
-        EditText colorE=new EditText(this);colorE.setHint("Color hex, e.g. #4F7CFF");colorE.setText(existing==null?"#4F7CFF":existing.optString("color","#4F7CFF"));l.addView(colorE);
-        EditText daysE=new EditText(this);daysE.setHint("Days: MONDAY,TUESDAY,... (blank = every day)");daysE.setText(existing==null?"":daysString(existing));l.addView(daysE);
+
+        addText(l,"Color",11);
+        String[] colorHolder={existing==null?"#4F7CFF":existing.optString("color","#4F7CFF")};
+        try{Color.parseColor(colorHolder[0]);}catch(Exception e){colorHolder[0]="#4F7CFF";}
+        l.addView(colorSwatchRow(colorHolder));
+
+        addText(l,"Repeats on",11);
+        boolean[] selectedDays=new boolean[7];
+        if(existing!=null){JSONArray ex=existing.optJSONArray("days"); if(ex!=null)for(int i=0;i<ex.length();i++){String dname=ex.optString(i).toUpperCase(Locale.US);for(int j=0;j<DAY_CODES.length;j++)if(DAY_CODES[j].equals(dname))selectedDays[j]=true;}}
+        l.addView(dayChipsRow(selectedDays));
+        addText(l,"No days selected = repeats every day",10);
+
         CheckBox track=new CheckBox(this);track.setText("Include in time tracking");track.setTextColor(Color.parseColor("#F4F6FB"));track.setChecked(existing==null||existing.optBoolean("track",true));l.addView(track);
+
         CheckBox alarm=new CheckBox(this);alarm.setText("Alarm");alarm.setTextColor(Color.parseColor("#F4F6FB"));alarm.setChecked(existing!=null&&existing.optJSONObject("alarm")!=null&&existing.optJSONObject("alarm").optBoolean("enabled",false));l.addView(alarm);
-        EditText minsE=new EditText(this);minsE.setHint("Alarm minutes before");minsE.setInputType(2);minsE.setText(existing==null?"5":String.valueOf(existing.optJSONObject("alarm")!=null?existing.optJSONObject("alarm").optInt("minutesBefore",5):5));l.addView(minsE);
-        new AlertDialog.Builder(this).setTitle(existing==null?"Add schedule block":"Edit schedule block").setView(l).setPositiveButton("Save",(d,w)->{try{
-            JSONObject b=existing==null?new JSONObject():existing;if(existing==null)b.put("id",UUID.randomUUID().toString());b.put("title",titleE.getText().toString().trim());b.put("start",startE.getText().toString().trim());b.put("end",endE.getText().toString().trim());b.put("category",String.valueOf(cat.getSelectedItem()));String color=colorE.getText().toString().trim();Color.parseColor(color);b.put("color",color);b.put("track",track.isChecked());String ds=daysE.getText().toString().trim();JSONArray days=new JSONArray();if(!ds.isEmpty())for(String x:ds.split(","))days.put(x.trim().toUpperCase(Locale.US));b.put("days",days);JSONObject a=new JSONObject();a.put("enabled",alarm.isChecked());a.put("minutesBefore",Math.max(0,Integer.parseInt(minsE.getText().toString().trim())));a.put("sound","alarm");b.put("alarm",a);if(existing==null)schedules.put(b);if(!a.optBoolean("enabled",false))ReminderReceiver.cancel(this,b.optString("id"));else ReminderReceiver.scheduleNext(this,b);saveState();showPlan();
-        }catch(Exception e){toast("Could not save schedule: "+safeMessage(e));}}).setNegativeButton("Cancel",null).show();
+        int existingMins=existing!=null&&existing.optJSONObject("alarm")!=null?existing.optJSONObject("alarm").optInt("minutesBefore",5):5;
+        Spinner minsSp=alarmMinutesSpinner(existingMins); minsSp.setVisibility(alarm.isChecked()?View.VISIBLE:View.GONE); l.addView(minsSp);
+        alarm.setOnCheckedChangeListener((btn,checked)->minsSp.setVisibility(checked?View.VISIBLE:View.GONE));
+
+        ScrollView scroll=new ScrollView(this); scroll.addView(l);
+        AlertDialog dialog=new AlertDialog.Builder(this).setTitle(existing==null?"Add schedule block":"Edit schedule block").setView(scroll)
+            .setPositiveButton("Save",(d,w)->{}) // overridden below to control dismissal
+            .setNegativeButton("Cancel",null).create();
+        dialog.setOnShowListener(dd->{
+            Button saveBtn=dialog.getButton(AlertDialog.BUTTON_POSITIVE);
+            saveBtn.setOnClickListener(v->{
+                titleErr.setVisibility(View.GONE); timeErr.setVisibility(View.GONE);
+                String titleVal=titleE.getText().toString().trim();
+                String startVal=startE.getText().toString().trim(), endVal=endE.getText().toString().trim();
+                boolean valid=true;
+                if(titleVal.isEmpty()){titleErr.setText("Title is required");titleErr.setVisibility(View.VISIBLE);valid=false;}
+                int sm=toMinutes(startVal), em=toMinutes(endVal);
+                if(sm<0||em<0){timeErr.setText("Please set both start and end time");timeErr.setVisibility(View.VISIBLE);valid=false;}
+                else if(em<=sm){timeErr.setText("End time must be after start time");timeErr.setVisibility(View.VISIBLE);valid=false;}
+                if(!valid)return;
+                try{
+                    JSONObject candidate=new JSONObject();
+                    candidate.put("id",existing==null?UUID.randomUUID().toString():existing.optString("id",UUID.randomUUID().toString()));
+                    candidate.put("title",titleVal); candidate.put("start",startVal); candidate.put("end",endVal);
+                    candidate.put("category",String.valueOf(cat.getSelectedItem()));
+                    candidate.put("color",colorHolder[0]); candidate.put("track",track.isChecked());
+                    JSONArray days=new JSONArray(); for(int i=0;i<7;i++)if(selectedDays[i])days.put(DAY_CODES[i]);
+                    candidate.put("days",days);
+                    JSONObject al=new JSONObject(); al.put("enabled",alarm.isChecked());
+                    al.put("minutesBefore",Integer.parseInt(ALARM_MIN_OPTIONS[Math.max(0,minsSp.getSelectedItemPosition())]));
+                    al.put("sound","alarm"); candidate.put("alarm",al);
+
+                    ArrayList<JSONObject> overlaps=findOverlappingBlocks(candidate,existing==null?null:existing.optString("id"));
+                    Runnable commit=()->{
+                        try{
+                            JSONObject b=existing==null?new JSONObject():existing;
+                            b.put("id",candidate.getString("id")); b.put("title",titleVal); b.put("start",startVal); b.put("end",endVal);
+                            b.put("category",candidate.getString("category")); b.put("color",colorHolder[0]); b.put("track",track.isChecked());
+                            b.put("days",days); b.put("alarm",al);
+                            if(existing==null)schedules.put(b);
+                            if(!al.optBoolean("enabled",false))ReminderReceiver.cancel(this,b.optString("id")); else ReminderReceiver.scheduleNext(this,b);
+                            saveState(); dialog.dismiss(); showPlan();
+                        }catch(Exception e){toast("Could not save schedule: "+safeMessage(e));}
+                    };
+                    if(!overlaps.isEmpty()){
+                        StringBuilder names=new StringBuilder(); for(JSONObject o:overlaps){if(names.length()>0)names.append(", ");names.append(blockTitle(o)).append(" (").append(o.optString("start")).append("–").append(o.optString("end")).append(")");}
+                        new AlertDialog.Builder(this).setTitle("Overlapping time")
+                            .setMessage("This overlaps with: "+names+". Save anyway?")
+                            .setPositiveButton("Save anyway",(dd2,ww2)->commit.run())
+                            .setNegativeButton("Go back",null).show();
+                    } else commit.run();
+                }catch(Exception e){toast("Could not save schedule: "+safeMessage(e));}
+            });
+        });
+        dialog.show();
     }
 
     String daysString(JSONObject b){StringBuilder x=new StringBuilder();JSONArray a=b.optJSONArray("days");if(a!=null)for(int i=0;i<a.length();i++){if(i>0)x.append(",");x.append(a.optString(i));}return x.toString();}
     void quickStartSchedule(JSONObject b){startScheduleBlock(b);}
+
+    // ---------- Overlap detection ----------
+    int toMinutes(String hhmm){try{String[] p=hhmm.split(":");return Integer.parseInt(p[0].trim())*60+Integer.parseInt(p[1].trim());}catch(Exception e){return -1;}}
+    boolean daysShareOverlap(JSONArray a,JSONArray b){
+        boolean aEvery=a==null||a.length()==0, bEvery=b==null||b.length()==0;
+        if(aEvery||bEvery)return true;
+        HashSet<String> setA=new HashSet<>(); for(int i=0;i<a.length();i++)setA.add(a.optString(i).toUpperCase(Locale.US));
+        for(int i=0;i<b.length();i++)if(setA.contains(b.optString(i).toUpperCase(Locale.US)))return true;
+        return false;
+    }
+    boolean timesOverlap(String s1,String e1,String s2,String e2){
+        int m1=toMinutes(s1),n1=toMinutes(e1),m2=toMinutes(s2),n2=toMinutes(e2);
+        if(m1<0||n1<0||m2<0||n2<0)return false;
+        return m1<n2 && m2<n1;
+    }
+    ArrayList<JSONObject> findOverlappingBlocks(JSONObject candidate,String excludeId){
+        ArrayList<JSONObject> out=new ArrayList<>();
+        for(int i=0;i<schedules.length();i++){
+            JSONObject b=schedules.optJSONObject(i); if(b==null)continue;
+            if(excludeId!=null&&excludeId.equals(b.optString("id")))continue;
+            if(daysShareOverlap(candidate.optJSONArray("days"),b.optJSONArray("days"))&&timesOverlap(candidate.optString("start"),candidate.optString("end"),b.optString("start"),b.optString("end")))
+                out.add(b);
+        }
+        return out;
+    }
+    boolean blockOverlapsAny(JSONObject b){return !findOverlappingBlocks(b,b.optString("id")).isEmpty();}
+    String blockTitle(JSONObject b){String t=b.optString("title","").trim();return t.isEmpty()?"Untitled block":t;}
+
+    // ---------- Delete helpers ----------
+    void confirmDelete(String title,String message,Runnable onConfirm){
+        new AlertDialog.Builder(this).setTitle(title).setMessage(message)
+            .setPositiveButton("Delete",(d,w)->onConfirm.run())
+            .setNegativeButton("Cancel",null).show();
+    }
+    void deleteScheduleBlock(JSONObject b){
+        confirmDelete("Delete schedule block?","\""+blockTitle(b)+"\" will be permanently removed.",()->{
+            try{
+                String id=b.optString("id","");
+                JSONArray out=new JSONArray();
+                for(int i=0;i<schedules.length();i++){JSONObject x=schedules.optJSONObject(i);if(x!=null&&!x.optString("id","").equals(id))out.put(x);}
+                schedules=out;
+                if(!id.isEmpty())ReminderReceiver.cancel(this,id);
+                saveState(); toast("Schedule block deleted"); showPlan();
+            }catch(Exception e){toast("Could not delete block: "+safeMessage(e));}
+        });
+    }
+    void deleteTask(int index){
+        JSONObject t=tasks.optJSONObject(index); if(t==null)return;
+        confirmDelete("Delete task?","\""+t.optString("title","Task")+"\" will be permanently removed.",()->{
+            try{
+                JSONArray out=new JSONArray();
+                for(int i=0;i<tasks.length();i++)if(i!=index)out.put(tasks.optJSONObject(i));
+                tasks=out;
+                JSONObject active=getActiveTimer();
+                if(active!=null&&t.optString("id","").equals(active.optString("taskId","")))clearActiveTimer();
+                saveState(); toast("Task deleted"); showPlan();
+            }catch(Exception e){toast("Could not delete task: "+safeMessage(e));}
+        });
+    }
+    void deleteTopic(JSONObject phase,JSONObject topic){
+        confirmDelete("Delete item?","\""+topic.optString("title","This item")+"\" will be permanently removed.",()->{
+            try{
+                removeFromArray(phase.optJSONArray("topics"),topic);
+                JSONArray cats=phase.optJSONArray("categories");
+                if(cats!=null)for(int i=0;i<cats.length();i++){JSONObject cat=cats.optJSONObject(i);if(cat!=null)removeFromArray(cat.optJSONArray("topics"),topic);}
+                HashSet<String> set=completedFor(currentRoadmapId); set.remove(topic.optString("id")); saveCompletedFor(currentRoadmapId,set);
+                saveRoadmaps(); toast("Item deleted"); showRoadmap();
+            }catch(Exception e){toast("Could not delete item: "+safeMessage(e));}
+        });
+    }
+    void removeFromArray(JSONArray arr,JSONObject target){
+        if(arr==null)return;
+        for(int i=arr.length()-1;i>=0;i--)if(arr.optJSONObject(i)==target)arr.remove(i);
+    }
+    void deletePhase(JSONObject phase){
+        confirmDelete("Delete phase?","\""+phase.optString("title","This phase")+"\" and all its items will be permanently removed.",()->{
+            try{
+                JSONArray topics=phaseTopics(phase); HashSet<String> set=completedFor(currentRoadmapId);
+                for(int i=0;i<topics.length();i++){JSONObject t=topics.optJSONObject(i);if(t!=null)set.remove(t.optString("id"));}
+                saveCompletedFor(currentRoadmapId,set);
+                JSONArray ps=roadmap.optJSONArray("phases");
+                if(ps!=null)removeFromArray(ps,phase);
+                saveRoadmaps(); toast("Phase deleted"); showRoadmap();
+            }catch(Exception e){toast("Could not delete phase: "+safeMessage(e));}
+        });
+    }
+    void deleteRoadmap(JSONObject r){
+        String id=r.optString("id",roadmapId(r));
+        confirmDelete("Delete roadmap?","\""+roadmapName(r)+"\" and all its progress will be permanently removed.",()->{
+            try{
+                JSONArray out=new JSONArray();
+                for(int i=0;i<roadmaps.length();i++){JSONObject x=roadmaps.optJSONObject(i);if(x!=null&&!id.equals(x.optString("id")))out.put(x);}
+                roadmaps=out;
+                try{SharedPreferences sp=getSharedPreferences(PREFS,0);JSONObject all=new JSONObject(sp.getString("completedByRoadmap","{}"));all.remove(id);sp.edit().putString("completedByRoadmap",all.toString()).apply();}catch(Exception ignored){}
+                if(id.equals(currentRoadmapId)){
+                    if(roadmaps.length()>0){currentRoadmapId=roadmaps.optJSONObject(0).optString("id");roadmap=findRoadmap(currentRoadmapId);}
+                    else{currentRoadmapId=null;roadmap=null;}
+                }
+                saveRoadmaps(); toast("Roadmap deleted"); showLearn();
+            }catch(Exception e){toast("Could not delete roadmap: "+safeMessage(e));}
+        });
+    }
     int minutesBetween(String a,String b){try{String[] x=a.split(":");String[] y=b.split(":");int m1=Integer.parseInt(x[0])*60+Integer.parseInt(x[1]);int m2=Integer.parseInt(y[0])*60+Integer.parseInt(y[1]);return m2>=m1?m2-m1:(24*60-m1+m2);}catch(Exception e){return 60;}}
     void scheduleAllImportedAlarms(){for(int i=0;i<schedules.length();i++){JSONObject b=schedules.optJSONObject(i);if(b!=null)ReminderReceiver.scheduleNext(this,b);}}
     void importBundledRoadmap(String assetName){
@@ -717,7 +1045,7 @@ public class MainActivity extends Activity {
     void importBackup(){Intent i=new Intent(Intent.ACTION_OPEN_DOCUMENT);i.setType("application/json");i.addCategory(Intent.CATEGORY_OPENABLE);startActivityForResult(i,300);}
     void exportBackup(){Intent i=new Intent(Intent.ACTION_CREATE_DOCUMENT);i.setType("application/json");i.putExtra(Intent.EXTRA_TITLE,"devtrack-backup-"+date()+".json");startActivityForResult(i,301);}
     @Override protected void onActivityResult(int req,int result,Intent data){super.onActivityResult(req,result,data);if(result!=RESULT_OK||data==null)return;try{
-        if(req==REQ_IMPORT){String raw=read(data.getData());JSONObject r=new JSONObject(raw);if(r.optJSONArray("phases")==null)throw new Exception("This JSON doesn't look like a roadmap (no 'phases' array found)");normalizeRoadmap(r,UUID.randomUUID().toString(),"Imported Roadmap","📚");String id=r.optString("id");new AlertDialog.Builder(this).setTitle("Import roadmap").setMessage("Import "+roadmapName(r)+" as a new editable roadmap?").setPositiveButton("Import",(d,w)->{try{String finalId=findRoadmap(id)!=null?UUID.randomUUID().toString():id;r.put("id",finalId);roadmaps.put(r);setCurrentRoadmap(finalId);saveRoadmaps();showLearn();toast("Roadmap imported");}catch(Exception e){toast("Could not import roadmap: "+safeMessage(e));}}).setNegativeButton("Cancel",null).show();}
+        if(req==REQ_IMPORT){String raw=read(data.getData());JSONObject r=new JSONObject(raw);String fmt=r.optString("format");if(!"trackit-roadmap".equals(fmt)&&!"devtrack-roadmap".equals(fmt))throw new Exception("Unsupported roadmap format");normalizeRoadmap(r,UUID.randomUUID().toString(),"Imported Roadmap","📚");String id=r.optString("id");new AlertDialog.Builder(this).setTitle("Import roadmap").setMessage("Import "+roadmapName(r)+" as a new editable roadmap?").setPositiveButton("Import",(d,w)->{try{String finalId=findRoadmap(id)!=null?UUID.randomUUID().toString():id;r.put("id",finalId);roadmaps.put(r);setCurrentRoadmap(finalId);saveRoadmaps();showLearn();toast("Roadmap imported");}catch(Exception e){toast("Could not import roadmap: "+safeMessage(e));}}).setNegativeButton("Cancel",null).show();}
         else if(req==REQ_EXPORT){write(data.getData(),roadmap.toString(2));toast("Roadmap exported");}
         else if(req==REQ_SCHEDULE_IMPORT){
             String raw=read(data.getData()); JSONObject sch=new JSONObject(raw); validateSchedule(sch);

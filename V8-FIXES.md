@@ -1,29 +1,4 @@
-# DevTrack v8 fixes (v2.1.1 review pass)
-
-## Additional fixes found and applied during review
-
-1. **Hardware Back button trap on the Learn tab** — `page==1` was true both for the
-   Learn list and the roadmap detail screen, and the old check also relied on
-   `roadmap!=null` (which is basically always true). That meant pressing the
-   system Back button while simply browsing the Learn list re-rendered Learn
-   instead of exiting/backgrounding the app, silently swallowing every back
-   press. Added a dedicated `roadmapDetailOpen` flag that is only true while a
-   roadmap's phase/topic detail view is open, and wired it into every screen
-   transition (`showHome`, `showLearn`, `showRoadmap`, `showPlan`,
-   `showProgress`). Back now only intercepts on the actual detail screen.
-
-2. **Roadmap JSON import was over-restrictive** — `Import Roadmap JSON` used to
-   hard-reject any file whose `format` field wasn't exactly
-   `trackit-roadmap` or `devtrack-roadmap`, so a roadmap exported from
-   somewhere else (or hand-written) with the same shape but no/different
-   format tag would fail with "Unsupported roadmap format." Import now just
-   checks for a `phases` array (the actual structural requirement) and lets
-   `normalizeRoadmap` fill in `format`/`id`/`name`/`icon` as before. This is
-   what makes "import JSON for any roadmap" actually work end-to-end —
-   Java Backend, DSA, or a custom roadmap all go through the same generic
-   importer already wired to the Learn tab.
-
-
+# DevTrack v8 fixes
 
 ## Fixed in one pass
 
