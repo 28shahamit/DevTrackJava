@@ -52,16 +52,26 @@ public class MainActivity extends Activity {
     }
     Button btn(String text){
         Button b=new Button(this); b.setText(text); b.setTextColor(Color.parseColor("#F4F6FB"));
-        b.setAllCaps(false); b.setBackgroundResource(R.drawable.secondary_button_bg); b.setMinHeight(dp(44)); b.setPadding(dp(16),dp(8),dp(16),dp(8)); return b;
+        b.setAllCaps(false); b.setBackgroundResource(R.drawable.secondary_button_bg); b.setMinHeight(dp(40)); b.setPadding(dp(14),dp(7),dp(14),dp(7)); b.setTextSize(14); return b;
     }
     Button primaryBtn(String text){Button b=btn(text);b.setBackgroundResource(R.drawable.primary_button_bg);return b;}
     Button iconBtn(String icon,String description){
         Button b=btn(icon); b.setContentDescription(description);
-        b.setMinWidth(dp(44)); b.setMinimumWidth(dp(44));
-        b.setPadding(dp(8),dp(8),dp(8),dp(8)); return b;
+        b.setMinWidth(dp(40)); b.setMinimumWidth(dp(40));
+        b.setPadding(dp(6),dp(6),dp(6),dp(6)); return b;
     }
     Button dangerIconBtn(String icon,String description){
         Button b=iconBtn(icon,description); b.setTextColor(Color.parseColor("#FF6B6B")); return b;
+    }
+    /** Even smaller icon-only button for dense rows (topic actions, etc). Still a real tap target, just visually lighter. */
+    Button tinyIconBtn(String icon,String description){
+        Button b=new Button(this); b.setText(icon); b.setTextColor(Color.parseColor("#C7CEDC"));
+        b.setAllCaps(false); b.setBackgroundResource(R.drawable.secondary_button_bg);
+        b.setMinWidth(dp(38)); b.setMinHeight(dp(38));
+        b.setPadding(dp(4),dp(4),dp(4),dp(4)); b.setTextSize(14);
+        b.setContentDescription(description);
+        LinearLayout.LayoutParams lp=new LinearLayout.LayoutParams(-2,-2); lp.setMargins(0,0,dp(6),0); b.setLayoutParams(lp);
+        return b;
     }
 
     static final String[] CATEGORY_NAMES={"WORK","LEARNING","PROJECT","CAREER","HEALTH","PERSONAL","FAMILY","COMMUTE","FOOD","SLEEP","BREAK","ENTERTAINMENT","DISTRACTION","OTHER"};
@@ -98,8 +108,8 @@ public class MainActivity extends Activity {
     }
     LinearLayout card(){
         LinearLayout l=new LinearLayout(this); l.setOrientation(LinearLayout.VERTICAL);
-        l.setPadding(dp(16),dp(14),dp(16),dp(14)); l.setBackgroundResource(R.drawable.card_bg);
-        LinearLayout.LayoutParams p=new LinearLayout.LayoutParams(-1,-2); p.setMargins(0,dp(7),0,dp(7)); l.setLayoutParams(p); return l;
+        l.setPadding(dp(14),dp(12),dp(14),dp(12)); l.setBackgroundResource(R.drawable.card_bg);
+        LinearLayout.LayoutParams p=new LinearLayout.LayoutParams(-1,-2); p.setMargins(0,dp(6),0,dp(6)); l.setLayoutParams(p); return l;
     }
     LinearLayout row(){ LinearLayout l=new LinearLayout(this); l.setOrientation(LinearLayout.HORIZONTAL); l.setGravity(Gravity.CENTER_VERTICAL); return l; }
     void addText(LinearLayout l,String s,float size){ l.addView(tv(s,size),new LinearLayout.LayoutParams(-1,-2)); }
@@ -351,26 +361,49 @@ public class MainActivity extends Activity {
         return out;
     }
     void addTopicRow(LinearLayout list,JSONObject t,JSONObject phase){
-        LinearLayout c=card();
+        LinearLayout c=card(); c.setPadding(dp(12),dp(9),dp(12),dp(9));
         String id=t.optString("id"); boolean done=completedFor(currentRoadmapId).contains(id);
-        TextView name=tv((done?"✓ ":"")+t.optString("title"),15); name.setTypeface(null,1); c.addView(name);
+        boolean saved=t.optBoolean("saved",false); boolean later=t.optBoolean("later",false);
+
+        LinearLayout head=row(); head.setGravity(Gravity.TOP|Gravity.CENTER_VERTICAL);
+        CheckBox cb=new CheckBox(this); cb.setChecked(done); cb.setContentDescription("Mark done");
+        head.addView(cb,new LinearLayout.LayoutParams(dp(34),-2));
+        TextView name=tv(t.optString("title"),15); name.setTypeface(null,1);
+        if(done)name.setTextColor(Color.parseColor("#7FE0A8"));
+        head.addView(name,new LinearLayout.LayoutParams(0,-2,1));
+        if(saved){TextView star=tv("★",13);star.setTextColor(Color.parseColor("#FFD166"));star.setPadding(dp(4),dp(4),0,dp(4));head.addView(star,new LinearLayout.LayoutParams(-2,-2));}
+        if(later){TextView lat=tv("↺",13);lat.setTextColor(Color.parseColor("#4FD1FF"));lat.setPadding(dp(4),dp(4),0,dp(4));head.addView(lat,new LinearLayout.LayoutParams(-2,-2));}
+        c.addView(head);
+
         StringBuilder meta=new StringBuilder();
         String priority=t.optString("priority",""); if(!priority.isEmpty())meta.append(priority.toUpperCase(Locale.US));
         if(t.optBoolean("interview",false)){if(meta.length()>0)meta.append(" · ");meta.append("INTERVIEW");}
         String difficulty=t.optString("difficulty",""); if(!difficulty.isEmpty()){if(meta.length()>0)meta.append(" · ");meta.append(difficulty.toUpperCase(Locale.US));}
-        if(meta.length()>0)addText(c,meta.toString(),11);
-        JSONArray subs=t.optJSONArray("subtopics"); if(subs!=null&&subs.length()>0)addText(c,"Topics: "+joinJsonArray(subs),11);
-        JSONArray tags=t.optJSONArray("tags"); if(tags!=null&&tags.length()>0)addText(c,"Tags: "+joinJsonArray(tags),11);
-        LinearLayout actions=row();
-        CheckBox cb=new CheckBox(this); cb.setChecked(done); cb.setText("DONE"); cb.setTextColor(Color.parseColor("#F4F6FB")); actions.addView(cb,new LinearLayout.LayoutParams(0,-2,1));
+        if(meta.length()>0){TextView m=tv(meta.toString(),11);m.setTextColor(Color.parseColor("#9AA4B8"));m.setPadding(dp(4),0,dp(4),0);c.addView(m);}
+        JSONArray subs=t.optJSONArray("subtopics");
+        if(subs!=null&&subs.length()>0){TextView s=tv("Topics: "+joinJsonArray(subs),11);s.setTextColor(Color.parseColor("#9AA4B8"));s.setPadding(dp(4),0,dp(4),0);s.setMaxLines(2);s.setEllipsize(android.text.TextUtils.TruncateAt.END);c.addView(s);}
+        JSONArray tags=t.optJSONArray("tags");
+        if(tags!=null&&tags.length()>0){TextView tgv=tv("Tags: "+joinJsonArray(tags),11);tgv.setTextColor(Color.parseColor("#9AA4B8"));tgv.setPadding(dp(4),0,dp(4),0);tgv.setMaxLines(1);tgv.setEllipsize(android.text.TextUtils.TruncateAt.END);c.addView(tgv);}
+
+        LinearLayout actions=row(); actions.setPadding(0,dp(6),0,0);
         String primary=t.optString("url",""); JSONArray links=t.optJSONArray("links"); boolean hasLink=!primary.trim().isEmpty()||(links!=null&&links.length()>0);
-        if(hasLink){Button open=btn("🔗 Open");open.setOnClickListener(v->openTopicLinks(t));actions.addView(open,new LinearLayout.LayoutParams(0,-2,1));}
-        boolean saved=t.optBoolean("saved",false); Button save=btn(saved?"★ Saved":"☆ Save"); save.setOnClickListener(v->{try{t.put("saved",!t.optBoolean("saved",false));saveRoadmaps();showRoadmap();}catch(Exception ignored){}});actions.addView(save,new LinearLayout.LayoutParams(0,-2,1));
-        boolean later=t.optBoolean("later",false); Button laterBtn=btn(later?"↺ Later":"Later"); laterBtn.setOnClickListener(v->{try{t.put("later",!t.optBoolean("later",false));saveRoadmaps();showRoadmap();}catch(Exception ignored){}});actions.addView(laterBtn,new LinearLayout.LayoutParams(0,-2,1));
+        if(hasLink){Button open=tinyIconBtn("🔗","Open resource");open.setOnClickListener(v->openTopicLinks(t));actions.addView(open);}
+        Button save=tinyIconBtn(saved?"★":"☆","Save for later"); if(saved)save.setTextColor(Color.parseColor("#FFD166")); save.setOnClickListener(v->{try{t.put("saved",!t.optBoolean("saved",false));saveRoadmaps();showRoadmap();}catch(Exception ignored){}});actions.addView(save);
+        Button laterBtn=tinyIconBtn("↺","Mark for later"); if(later)laterBtn.setTextColor(Color.parseColor("#4FD1FF")); laterBtn.setOnClickListener(v->{try{t.put("later",!t.optBoolean("later",false));saveRoadmaps();showRoadmap();}catch(Exception ignored){}});actions.addView(laterBtn);
+        Button track=tinyIconBtn("▶","Track time");track.setOnClickListener(v->startPersistentTimer(t.optString("title","Roadmap item"),"LEARNING",null,null));actions.addView(track);
+        View spacer=new View(this); actions.addView(spacer,new LinearLayout.LayoutParams(0,-2,1));
+        Button more=tinyIconBtn("⋮","More options");more.setOnClickListener(v->topicOverflowMenu(phase,t));actions.addView(more);
         c.addView(actions);
-        LinearLayout secondary=row(); Button track=btn("▶ Track");track.setOnClickListener(v->startPersistentTimer(t.optString("title","Roadmap item"),"LEARNING",null,null));secondary.addView(track,new LinearLayout.LayoutParams(0,-2,1)); Button edit=iconBtn("✎","Edit roadmap item");edit.setOnClickListener(v->editTopicDialog(phase,t));secondary.addView(edit); Button del=dangerIconBtn("🗑","Delete roadmap item");del.setOnClickListener(v->deleteTopic(phase,t));secondary.addView(del);c.addView(secondary);
+
         cb.setOnClickListener(v->{HashSet<String> set=completedFor(currentRoadmapId);if(cb.isChecked())set.add(id);else set.remove(id);saveCompletedFor(currentRoadmapId,set);showRoadmap();});
         list.addView(c);
+    }
+    void topicOverflowMenu(JSONObject phase,JSONObject t){
+        String[] opts={"✎ Edit","🗑 Delete","Cancel"};
+        new AlertDialog.Builder(this).setTitle(t.optString("title","Item")).setItems(opts,(d,w)->{
+            if(w==0)editTopicDialog(phase,t);
+            else if(w==1)deleteTopic(phase,t);
+        }).show();
     }
     void openTopicLinks(JSONObject t){
         try{

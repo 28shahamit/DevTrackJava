@@ -63,7 +63,24 @@ Added a 🗑 delete icon next to every ✎ edit control, plus a confirmation dia
 - Category labels across Home, Plan, and schedule rows now show a small colored dot
   matching the category, for quicker visual scanning.
 
-## Validation performed
+## 5. UI density pass (buttons too big, topics hard to scan)
+
+- **Roadmap topic rows rebuilt** — each item used to be a checkbox+"DONE" row, then a
+  Save/Later pill row, then a Track pill + edit/delete icon row: 3 rows of full-width
+  buttons per topic. Now it's: checkbox + title (with a small ★/↺ badge if
+  saved/marked later) → meta line → one compact row of small icon buttons
+  (🔗 open / ☆ save / ↺ later / ▶ track / ⋮ more). Edit and Delete moved into the
+  "⋮" overflow menu since they're used far less often than Save/Later/Track. This
+  turns a ~3-line-of-buttons card into one, so far more topics fit on screen and it's
+  actually scannable — this is what image 3 (Roadmap - Experienced Track) was
+  showing.
+- **Buttons shrunk app-wide** — base button height 44dp→40dp, icon buttons 44dp→40dp,
+  padding tightened to match, and a new smaller `tinyIconBtn` (38dp) for dense rows
+  like topic actions. Card padding and margins tightened slightly too. Still within
+  reasonable tap-target size, just less visually heavy.
+- Saved/Later state now shows as a small colored ★/↺ badge next to the title instead
+  of only being visible by re-reading button label text.
+
 
 - Delimiter/bracket balance checked across the whole file (parens, braces, brackets
   all match).
