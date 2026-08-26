@@ -1,10 +1,30 @@
 <resources>
+    <!-- Surfaces -->
     <color name="bg">#0D0F15</color>
     <color name="surface">#151821</color>
     <color name="surface2">#1B1F2A</color>
+    <color name="surface3">#232838</color>
     <color name="border">#2B3140</color>
+
+    <!-- Text -->
     <color name="text">#F4F6FB</color>
     <color name="muted">#9AA4B8</color>
+    <color name="muted_dim">#6B7488</color>
+
+    <!-- Brand / role colors (Material role names so themes.xml can map onto them) -->
+    <color name="primary">#4F8EF7</color>
+    <color name="primary_variant">#3E78D8</color>
+    <color name="on_primary">#0A1220</color>
+    <color name="secondary">#37C6A6</color>
+    <color name="on_secondary">#052620</color>
+    <color name="error">#E5484D</color>
+    <color name="on_error">#2A0708</color>
+
+    <!-- Legacy alias kept so existing Java code referencing "accent" colors still resolves -->
     <color name="accent">#4F8EF7</color>
     <color name="accent_pressed">#3E78D8</color>
+
+    <!-- Nav selector states -->
+    <color name="nav_selected">@color/primary</color>
+    <color name="nav_unselected">@color/muted</color>
 </resources>

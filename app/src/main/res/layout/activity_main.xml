@@ -1,5 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
     android:id="@+id/root"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
@@ -17,18 +18,15 @@
         android:layout_height="1dp"
         android:background="@color/border"/>
 
-    <LinearLayout
-        android:id="@+id/nav"
+    <com.google.android.material.bottomnavigation.BottomNavigationView
+        android:id="@+id/bottomNav"
         android:layout_width="match_parent"
-        android:layout_height="68dp"
-        android:orientation="horizontal"
-        android:gravity="center"
-        android:padding="6dp"
-        android:background="@color/surface">
-
-        <Button android:id="@+id/navHome" android:text="⌂\nHome" style="@style/NavButton"/>
-        <Button android:id="@+id/navLearn" android:text="▣\nLearn" style="@style/NavButton"/>
-        <Button android:id="@+id/navPlan" android:text="✓\nPlan" style="@style/NavButton"/>
-        <Button android:id="@+id/navProgress" android:text="↗\nProgress" style="@style/NavButton"/>
-    </LinearLayout>
+        android:layout_height="@dimen/bottom_nav_height"
+        android:background="@color/surface"
+        app:itemIconTint="@color/nav_item_tint"
+        app:itemTextColor="@color/nav_item_tint"
+        app:itemRippleColor="@color/nav_selected"
+        app:labelVisibilityMode="labeled"
+        app:menu="@menu/bottom_nav_menu"
+        app:elevation="0dp"/>
 </LinearLayout>

@@ -10,6 +10,7 @@ import android.os.*;
 import android.provider.Settings;
 import android.view.*;
 import android.widget.*;
+import com.google.android.material.bottomnavigation.BottomNavigationView;
 import org.json.*;
 
 import java.io.*;
@@ -189,11 +190,28 @@ public class MainActivity extends Activity {
         c.addView(resetRoadmap);
         box().addView(c);
     }
+    boolean suppressNavCallback=false;
     void setupNav(){
-        findViewById(R.id.navHome).setOnClickListener(v->showHome());
-        findViewById(R.id.navLearn).setOnClickListener(v->showLearn());
-        findViewById(R.id.navPlan).setOnClickListener(v->showPlan());
-        findViewById(R.id.navProgress).setOnClickListener(v->showProgress());
+        BottomNavigationView bottomNav=findViewById(R.id.bottomNav);
+        bottomNav.setOnItemSelectedListener(item->{
+            if(suppressNavCallback)return true;
+            int id=item.getItemId();
+            if(id==R.id.nav_home){showHome();return true;}
+            if(id==R.id.nav_learn){showLearn();return true;}
+            if(id==R.id.nav_plan){showPlan();return true;}
+            if(id==R.id.nav_progress){showProgress();return true;}
+            return false;
+        });
+    }
+    void syncNavSelection(){
+        BottomNavigationView bottomNav=findViewById(R.id.bottomNav);
+        if(bottomNav==null)return;
+        int id=page==0?R.id.nav_home:page==1?R.id.nav_learn:page==2?R.id.nav_plan:R.id.nav_progress;
+        if(bottomNav.getSelectedItemId()!=id){
+            suppressNavCallback=true;
+            bottomNav.setSelectedItemId(id);
+            suppressNavCallback=false;
+        }
     }
     void base(String heading,String sub){
         content.removeAllViews();
@@ -203,6 +221,7 @@ public class MainActivity extends Activity {
         if(sub!=null){ TextView s=tv(sub,13); s.setTextColor(Color.parseColor("#9AA4B8")); box.addView(s); }
         sc.addView(box); content.addView(sc);
         content.setTag(box);
+        syncNavSelection();
     }
     void baseWithBack(String heading,String sub,Runnable backAction){
         base(heading,sub);
