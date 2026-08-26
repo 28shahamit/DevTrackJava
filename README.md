@@ -95,3 +95,17 @@ Each block can define its own `color` and alarm configuration:
 ```
 
 The schedule UI uses the block color as a visual timeline accent. Alarm settings are applied when the schedule is imported. Alarms use the device alarm ringtone through the native Android notification channel and are rescheduled after reboot.
+
+## Productivity tracking
+
+DevTrack uses a persistent timestamp-based timer rather than a blocking timer dialog.
+
+- Start a planned activity, task, or manual activity.
+- Stop & Save creates a session without completing the task.
+- Resume continues the same task/plan later and all sessions are combined into the task total.
+- Complete/End Task is separate from Stop.
+- Automatic from Plan mode uses today's schedule as the tracking queue.
+- Manual mode lets the user choose an activity and category.
+- Categories are selected from a dropdown.
+- Schedule blocks can have colors and alarm settings in Daily Schedule JSON.
+- The active timer survives normal navigation/backgrounding because the start timestamp is persisted locally.
