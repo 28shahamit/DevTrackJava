@@ -72,7 +72,8 @@ public class MainActivity extends Activity {
     Button tinyIconBtn(String icon,String description){
         Button b=new Button(this); b.setText(icon); b.setTextColor(Color.parseColor("#C7CEDC"));
         b.setAllCaps(false); b.setBackgroundResource(R.drawable.secondary_button_bg);
-        b.setMinWidth(dp(38)); b.setMinHeight(dp(38));
+        b.setMinWidth(dp(38)); b.setMinimumWidth(dp(38));
+        b.setMinHeight(dp(38)); b.setMinimumHeight(dp(38));
         b.setPadding(dp(4),dp(4),dp(4),dp(4)); b.setTextSize(14);
         b.setContentDescription(description);
         LinearLayout.LayoutParams lp=new LinearLayout.LayoutParams(-2,-2); lp.setMargins(0,0,dp(6),0); b.setLayoutParams(lp);
@@ -82,7 +83,8 @@ public class MainActivity extends Activity {
     Button microIconBtn(String icon,String description){
         Button b=new Button(this); b.setText(icon); b.setTextColor(Color.parseColor("#C7CEDC"));
         b.setAllCaps(false); b.setBackgroundResource(R.drawable.secondary_button_bg);
-        b.setMinWidth(dp(24)); b.setMinHeight(dp(24));
+        b.setMinWidth(dp(24)); b.setMinimumWidth(dp(24));
+        b.setMinHeight(dp(24)); b.setMinimumHeight(dp(24));
         b.setPadding(dp(1),dp(1),dp(1),dp(1)); b.setTextSize(11);
         b.setContentDescription(description);
         LinearLayout.LayoutParams lp=new LinearLayout.LayoutParams(-2,-2); lp.setMargins(dp(3),0,0,0); b.setLayoutParams(lp);
