@@ -53,7 +53,7 @@ public class MainActivity extends Activity {
     }
     Button btn(String text){
         Button b=new Button(this); b.setText(text); b.setTextColor(Color.parseColor("#F4F6FB"));
-        b.setAllCaps(false); b.setBackgroundResource(R.drawable.secondary_button_bg); b.setMinHeight(dp(40)); b.setPadding(dp(14),dp(7),dp(14),dp(7)); b.setTextSize(14); return b;
+        b.setAllCaps(false); b.setBackgroundResource(R.drawable.secondary_button_bg); b.setMinHeight(dp(40)); b.setMinimumHeight(dp(40)); b.setPadding(dp(14),dp(7),dp(14),dp(7)); b.setTextSize(14); return b;
     }
     Button primaryBtn(String text){Button b=btn(text);b.setBackgroundResource(R.drawable.primary_button_bg);return b;}
     Button iconBtn(String icon,String description){
@@ -234,6 +234,21 @@ public class MainActivity extends Activity {
         if(sub!=null){TextView st=tv(sub,13);st.setTextColor(Color.parseColor("#9AA4B8"));root.addView(st);}
     }
     LinearLayout box(){ return (LinearLayout)content.getTag(); }
+    int currentScrollY(){
+        if(content!=null && content.getChildCount()>0 && content.getChildAt(0) instanceof ScrollView){
+            return ((ScrollView)content.getChildAt(0)).getScrollY();
+        }
+        return 0;
+    }
+    void restoreScrollY(int y){
+        if(content!=null && content.getChildCount()>0 && content.getChildAt(0) instanceof ScrollView){
+            ScrollView sv=(ScrollView)content.getChildAt(0);
+            sv.post(()->sv.scrollTo(0,y));
+        }
+    }
+    /** Rebuilds the current roadmap screen in place, keeping the user's scroll position
+     *  (e.g. after toggling a topic, checking a box, or editing a phase). */
+    void refreshRoadmap(){ int y=currentScrollY(); showRoadmap(); restoreScrollY(y); }
 
     void showHome(){
         page=0; base("DevTrack","Your day, your time, your progress"); setNavSelected(R.id.navHome);
@@ -389,7 +404,7 @@ public class MainActivity extends Activity {
 
         LinearLayout head=row(); head.setGravity(Gravity.CENTER_VERTICAL);
         Button chevron=microIconBtn(expanded?"▾":"▸","Toggle details");
-        chevron.setOnClickListener(v->{if(expanded)expandedTopics.remove(id);else expandedTopics.add(id);showRoadmap();});
+        chevron.setOnClickListener(v->{if(expanded)expandedTopics.remove(id);else expandedTopics.add(id);refreshRoadmap();});
         head.addView(chevron);
         CheckBox cb=new CheckBox(this); cb.setChecked(done); cb.setContentDescription("Mark done");
         head.addView(cb,new LinearLayout.LayoutParams(dp(26),-2));
@@ -426,7 +441,7 @@ public class MainActivity extends Activity {
             c.addView(details);
         }
 
-        cb.setOnClickListener(v->{HashSet<String> set=completedFor(currentRoadmapId);if(cb.isChecked())set.add(id);else set.remove(id);saveCompletedFor(currentRoadmapId,set);showRoadmap();});
+        cb.setOnClickListener(v->{HashSet<String> set=completedFor(currentRoadmapId);if(cb.isChecked())set.add(id);else set.remove(id);saveCompletedFor(currentRoadmapId,set);refreshRoadmap();});
         list.addView(c);
     }
     void topicOverflowMenu(JSONObject phase,JSONObject t){
@@ -434,8 +449,8 @@ public class MainActivity extends Activity {
         String[] opts={saved?"★ Remove from saved":"☆ Save for later",later?"↺ Remove from later":"↺ Mark for later","✎ Edit","🗑 Delete","Cancel"};
         new AlertDialog.Builder(this).setTitle(t.optString("title","Item")).setItems(opts,(d,w)->{
             try{
-                if(w==0){t.put("saved",!saved);saveRoadmaps();showRoadmap();}
-                else if(w==1){t.put("later",!later);saveRoadmaps();showRoadmap();}
+                if(w==0){t.put("saved",!saved);saveRoadmaps();refreshRoadmap();}
+                else if(w==1){t.put("later",!later);saveRoadmaps();refreshRoadmap();}
                 else if(w==2)editTopicDialog(phase,t);
                 else if(w==3)deleteTopic(phase,t);
             }catch(Exception ignored){}
@@ -758,9 +773,9 @@ public class MainActivity extends Activity {
     void saveCompletedFor(String id,HashSet<String> set){try{SharedPreferences sp=getSharedPreferences(PREFS,0);JSONObject all=new JSONObject(sp.getString("completedByRoadmap","{}"));JSONArray a=new JSONArray();for(String x:set)a.put(x);all.put(id,a);sp.edit().putString("completedByRoadmap",all.toString()).apply();completed.clear();completed.addAll(set);}catch(Exception ignored){}}
     void editRoadmapDialog(JSONObject r){
         LinearLayout l=new LinearLayout(this);l.setOrientation(LinearLayout.VERTICAL);l.setPadding(dp(8),0,dp(8),0);EditText name=new EditText(this);name.setHint("Roadmap name");name.setText(roadmapName(r));l.addView(name);EditText desc=new EditText(this);desc.setHint("Description");desc.setText(roadmapDescription(r));l.addView(desc);EditText icon=new EditText(this);icon.setHint("Icon, e.g. 🧠");icon.setText(r.optString("icon","📚"));l.addView(icon);
-        new AlertDialog.Builder(this).setTitle("Edit roadmap").setView(l).setPositiveButton("Save",(d,w)->{try{r.put("name",name.getText().toString().trim());r.put("description",desc.getText().toString().trim());r.put("icon",icon.getText().toString().trim());saveRoadmaps();showRoadmap();}catch(Exception e){toast("Could not edit roadmap");}}).setNegativeButton("Cancel",null).show();
+        new AlertDialog.Builder(this).setTitle("Edit roadmap").setView(l).setPositiveButton("Save",(d,w)->{try{r.put("name",name.getText().toString().trim());r.put("description",desc.getText().toString().trim());r.put("icon",icon.getText().toString().trim());saveRoadmaps();refreshRoadmap();}catch(Exception e){toast("Could not edit roadmap");}}).setNegativeButton("Cancel",null).show();
     }
-    void editPhaseDialog(JSONObject ph){LinearLayout l=new LinearLayout(this);l.setOrientation(LinearLayout.VERTICAL);EditText name=new EditText(this);name.setHint("Phase title");name.setText(ph.optString("title"));l.addView(name);EditText duration=new EditText(this);duration.setHint("Duration");duration.setText(ph.optString("duration"));l.addView(duration);new AlertDialog.Builder(this).setTitle("Edit phase").setView(l).setPositiveButton("Save",(d,w)->{try{ph.put("title",name.getText().toString().trim());ph.put("duration",duration.getText().toString().trim());saveRoadmaps();showRoadmap();}catch(Exception e){toast("Could not edit phase");}}).setNegativeButton("Cancel",null).show();}
+    void editPhaseDialog(JSONObject ph){LinearLayout l=new LinearLayout(this);l.setOrientation(LinearLayout.VERTICAL);EditText name=new EditText(this);name.setHint("Phase title");name.setText(ph.optString("title"));l.addView(name);EditText duration=new EditText(this);duration.setHint("Duration");duration.setText(ph.optString("duration"));l.addView(duration);new AlertDialog.Builder(this).setTitle("Edit phase").setView(l).setPositiveButton("Save",(d,w)->{try{ph.put("title",name.getText().toString().trim());ph.put("duration",duration.getText().toString().trim());saveRoadmaps();refreshRoadmap();}catch(Exception e){toast("Could not edit phase");}}).setNegativeButton("Cancel",null).show();}
     void editTopicDialog(JSONObject ph,JSONObject existing){
         LinearLayout l=new LinearLayout(this);l.setOrientation(LinearLayout.VERTICAL);l.setPadding(dp(16),dp(8),dp(16),dp(8));
 
@@ -803,13 +818,13 @@ public class MainActivity extends Activity {
             String tagRaw=tags.getText().toString().trim();JSONArray tagArray=new JSONArray();if(!tagRaw.isEmpty())for(String x:tagRaw.split(","))if(!x.trim().isEmpty())tagArray.put(x.trim());if(tagArray.length()>0)t.put("tags",tagArray);else t.remove("tags");
             String primary=url.getText().toString().trim();if(primary.isEmpty())t.remove("url");else t.put("url",primary);
             JSONArray extra=parseLinks(links.getText().toString());if(extra.length()>0)t.put("links",extra);else t.remove("links");
-            saveRoadmaps();showRoadmap();
+            saveRoadmaps();refreshRoadmap();
         }catch(Exception e){toast("Could not save item: "+safeMessage(e));}}).setNegativeButton("Cancel",null).show();
     }
     String linksToText(JSONArray links){if(links==null)return "";StringBuilder b=new StringBuilder();for(int i=0;i<links.length();i++){JSONObject l=links.optJSONObject(i);if(l==null)continue;if(b.length()>0)b.append("\n");b.append(l.optString("title","Resource")).append(" | ").append(l.optString("url",""));}return b.toString();}
     JSONArray parseLinks(String raw){JSONArray out=new JSONArray();if(raw==null||raw.trim().isEmpty())return out;for(String line:raw.split("\\n")){String[] p=line.split("\\|",2);if(p.length<2)continue;String title=p[0].trim(),url=p[1].trim();if(url.isEmpty())continue;JSONObject o=new JSONObject();try{o.put("title",title.isEmpty()?"Resource":title);o.put("url",url);out.put(o);}catch(Exception ignored){}}return out;}
     String joinJsonArray(JSONArray a){if(a==null)return "";StringBuilder b=new StringBuilder();for(int i=0;i<a.length();i++){if(i>0)b.append(", ");b.append(a.optString(i));}return b.toString();}
-    void addPhaseDialog(){LinearLayout l=new LinearLayout(this);l.setOrientation(LinearLayout.VERTICAL);EditText name=new EditText(this);name.setHint("Phase title");l.addView(name);EditText duration=new EditText(this);duration.setHint("Duration, e.g. Week 1");l.addView(duration);new AlertDialog.Builder(this).setTitle("Add phase").setView(l).setPositiveButton("Add",(d,w)->{try{JSONArray ps=roadmap.optJSONArray("phases");if(ps==null){ps=new JSONArray();roadmap.put("phases",ps);}JSONObject ph=new JSONObject();ph.put("id",UUID.randomUUID().toString());ph.put("number",ps.length()+1);ph.put("title",name.getText().toString().trim());ph.put("duration",duration.getText().toString().trim());ph.put("topics",new JSONArray());ps.put(ph);saveRoadmaps();showRoadmap();}catch(Exception e){toast("Could not add phase");}}).setNegativeButton("Cancel",null).show();}
+    void addPhaseDialog(){LinearLayout l=new LinearLayout(this);l.setOrientation(LinearLayout.VERTICAL);EditText name=new EditText(this);name.setHint("Phase title");l.addView(name);EditText duration=new EditText(this);duration.setHint("Duration, e.g. Week 1");l.addView(duration);new AlertDialog.Builder(this).setTitle("Add phase").setView(l).setPositiveButton("Add",(d,w)->{try{JSONArray ps=roadmap.optJSONArray("phases");if(ps==null){ps=new JSONArray();roadmap.put("phases",ps);}JSONObject ph=new JSONObject();ph.put("id",UUID.randomUUID().toString());ph.put("number",ps.length()+1);ph.put("title",name.getText().toString().trim());ph.put("duration",duration.getText().toString().trim());ph.put("topics",new JSONArray());ps.put(ph);saveRoadmaps();refreshRoadmap();}catch(Exception e){toast("Could not add phase");}}).setNegativeButton("Cancel",null).show();}
     String roadmapItemLabel(JSONObject r){
         if(r!=null){String type=r.optString("itemType","").trim();if("question".equalsIgnoreCase(type))return "questions";String name=roadmapName(r).toLowerCase(Locale.US);if(name.contains("dsa")||name.contains("data structures")||name.contains("algorithm"))return "questions";}
         return "topics";
@@ -1129,7 +1144,7 @@ public class MainActivity extends Activity {
                 JSONArray cats=phase.optJSONArray("categories");
                 if(cats!=null)for(int i=0;i<cats.length();i++){JSONObject cat=cats.optJSONObject(i);if(cat!=null)removeFromArray(cat.optJSONArray("topics"),topic);}
                 HashSet<String> set=completedFor(currentRoadmapId); set.remove(topic.optString("id")); saveCompletedFor(currentRoadmapId,set);
-                saveRoadmaps(); toast("Item deleted"); showRoadmap();
+                saveRoadmaps(); toast("Item deleted"); refreshRoadmap();
             }catch(Exception e){toast("Could not delete item: "+safeMessage(e));}
         });
     }
@@ -1145,7 +1160,7 @@ public class MainActivity extends Activity {
                 saveCompletedFor(currentRoadmapId,set);
                 JSONArray ps=roadmap.optJSONArray("phases");
                 if(ps!=null)removeFromArray(ps,phase);
-                saveRoadmaps(); toast("Phase deleted"); showRoadmap();
+                saveRoadmaps(); toast("Phase deleted"); refreshRoadmap();
             }catch(Exception e){toast("Could not delete phase: "+safeMessage(e));}
         });
     }
