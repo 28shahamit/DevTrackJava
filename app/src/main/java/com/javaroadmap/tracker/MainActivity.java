@@ -56,8 +56,11 @@ public class MainActivity extends Activity {
         b.setAllCaps(false); b.setBackgroundResource(R.drawable.secondary_button_bg); b.setMinHeight(dp(40)); b.setMinimumHeight(dp(40)); b.setPadding(dp(14),dp(7),dp(14),dp(7)); b.setTextSize(14); return b;
     }
     Button primaryBtn(String text){Button b=btn(text);b.setBackgroundResource(R.drawable.primary_button_bg);return b;}
+    /** Visible-text destructive action button (CR-005: destructive actions should be clearly identifiable, not just an icon). */
+    Button dangerBtn(String text){Button b=btn(text); b.setTextColor(Color.parseColor("#FF6B6B")); return b;}
     Button iconBtn(String icon,String description){
         Button b=btn(icon); b.setContentDescription(description);
+        if(Build.VERSION.SDK_INT>=26)b.setTooltipText(description);
         b.setMinWidth(dp(40)); b.setMinimumWidth(dp(40));
         b.setPadding(dp(6),dp(6),dp(6),dp(6)); return b;
     }
@@ -76,6 +79,7 @@ public class MainActivity extends Activity {
         b.setMinHeight(dp(38)); b.setMinimumHeight(dp(38));
         b.setPadding(dp(4),dp(4),dp(4),dp(4)); b.setTextSize(14);
         b.setContentDescription(description);
+        if(Build.VERSION.SDK_INT>=26)b.setTooltipText(description);
         LinearLayout.LayoutParams lp=new LinearLayout.LayoutParams(-2,-2); lp.setMargins(0,0,dp(6),0); b.setLayoutParams(lp);
         return b;
     }
@@ -87,6 +91,7 @@ public class MainActivity extends Activity {
         b.setMinHeight(dp(24)); b.setMinimumHeight(dp(24));
         b.setPadding(dp(1),dp(1),dp(1),dp(1)); b.setTextSize(11);
         b.setContentDescription(description);
+        if(Build.VERSION.SDK_INT>=26)b.setTooltipText(description);
         LinearLayout.LayoutParams lp=new LinearLayout.LayoutParams(-2,-2); lp.setMargins(dp(3),0,0,0); b.setLayoutParams(lp);
         return b;
     }
@@ -128,6 +133,9 @@ public class MainActivity extends Activity {
         l.setPadding(dp(14),dp(12),dp(14),dp(12)); l.setBackgroundResource(R.drawable.card_bg);
         LinearLayout.LayoutParams p=new LinearLayout.LayoutParams(-1,-2); p.setMargins(0,dp(6),0,dp(6)); l.setLayoutParams(p); return l;
     }
+    /** CR-002: every dialog in the app should be built through this so it matches the dark theme
+     *  instead of the platform's default gray Material dialog surface. */
+    AlertDialog.Builder dlg(){ return new AlertDialog.Builder(this,R.style.AppTheme_Dialog); }
     LinearLayout row(){ LinearLayout l=new LinearLayout(this); l.setOrientation(LinearLayout.HORIZONTAL); l.setGravity(Gravity.CENTER_VERTICAL); return l; }
     void addText(LinearLayout l,String s,float size){ l.addView(tv(s,size),new LinearLayout.LayoutParams(-1,-2)); }
     void addSpace(LinearLayout l,int h){ Space s=new Space(this); l.addView(s,new LinearLayout.LayoutParams(1,dp(h))); }
@@ -275,7 +283,8 @@ public class MainActivity extends Activity {
     void addTrackingCard(LinearLayout parent){
         LinearLayout c=card(); addText(c,"TIME TRACKING",11); JSONObject active=getActiveTimer();
         if(active!=null){
-            addText(c,"● RUNNING",12); timerTitle=tv(active.optString("title","Activity"),20); c.addView(timerTitle);
+            TextView runningTv=tv("🔴 RUNNING",13); runningTv.setTextColor(Color.parseColor("#FF6B6B")); runningTv.setTypeface(null,1); c.addView(runningTv);
+            timerTitle=tv(active.optString("title","Activity"),20); c.addView(timerTitle);
             timerMeta=tv(active.optString("category","OTHER"),12); timerMeta.setTextColor(Color.parseColor("#9AA4B8")); c.addView(timerMeta);
             timerText=tv("00:00:00",34); timerText.setTypeface(null,1); timerText.setGravity(Gravity.CENTER); c.addView(timerText,new LinearLayout.LayoutParams(-1,dp(54)));
             LinearLayout r=row(); timerButton=primaryBtn("■ Stop & Save"); timerButton.setOnClickListener(v->stopActiveTimer(false)); r.addView(timerButton,new LinearLayout.LayoutParams(0,-2,1));
@@ -306,9 +315,10 @@ public class MainActivity extends Activity {
     void addCompactPlanRow(LinearLayout parent,JSONObject b){
         LinearLayout c=row(); c.setPadding(0,dp(7),0,dp(7));
         View stripe=new View(this); int color; try{color=Color.parseColor(b.optString("color","#4F7CFF"));}catch(Exception e){color=Color.parseColor("#4F7CFF");}
-        stripe.setBackgroundColor(color); c.addView(stripe,new LinearLayout.LayoutParams(dp(5),dp(66)));
+        stripe.setBackgroundColor(color); c.addView(stripe,new LinearLayout.LayoutParams(dp(5),dp(84)));
         LinearLayout mid=new LinearLayout(this); mid.setOrientation(LinearLayout.VERTICAL); mid.setPadding(dp(10),0,dp(8),0);
-        addText(mid,b.optString("start","")+" – "+b.optString("end",""),12); addText(mid,blockTitle(b),16); mid.addView(labelWithDot(b.optString("category","OTHER")+(b.optBoolean("track",true)?" · tracked":""),categoryColor(b.optString("category","OTHER")),11));
+        addText(mid,b.optString("start","")+" – "+b.optString("end",""),12); addText(mid,blockTitle(b),16); mid.addView(labelWithDot(b.optString("category","OTHER")+(b.optBoolean("track",true)?" · in time tracking":""),categoryColor(b.optString("category","OTHER")),11));
+        String stateLabel=scheduleStateLabelWithMeta(b); TextView stateTv=tv(stateLabel,12); stateTv.setTextColor(stateColor(stateLabel)); mid.addView(stateTv);
         c.addView(mid,new LinearLayout.LayoutParams(0,-2,1));
         boolean complete=isPlanCompletedForDate(b.optString("id"),date());
         Button st=primaryBtn(complete?"✓ Done":(hasOpenSessionForSchedule(b)?"▶ Resume": "▶ Start"));
@@ -321,6 +331,7 @@ public class MainActivity extends Activity {
         CheckBox cb=new CheckBox(this); cb.setChecked("completed".equals(t.optString("status"))); r.addView(cb,new LinearLayout.LayoutParams(dp(42),-2));
         LinearLayout mid=new LinearLayout(this); mid.setOrientation(LinearLayout.VERTICAL);
         addText(mid,t.optString("title"),15);
+        String taskState=taskStateLabelWithMeta(t); TextView stateTv=tv(taskState,12); stateTv.setTextColor(stateColor(taskState)); mid.addView(stateTv);
         String effort="Estimate "+formatMin(t.optInt("estimateMin",0))+" · Actual "+formatMin(t.optInt("actualMin",0))+" · Remaining "+formatMin(t.optInt("remainingMin",0));
         TextView e=tv(effort,11); e.setTextColor(Color.parseColor("#9AA4B8")); mid.addView(e);
         r.addView(mid,new LinearLayout.LayoutParams(0,-2,1));
@@ -447,7 +458,7 @@ public class MainActivity extends Activity {
     void topicOverflowMenu(JSONObject phase,JSONObject t){
         boolean saved=t.optBoolean("saved",false); boolean later=t.optBoolean("later",false);
         String[] opts={saved?"★ Remove from saved":"☆ Save for later",later?"↺ Remove from later":"↺ Mark for later","✎ Edit","🗑 Delete","Cancel"};
-        new AlertDialog.Builder(this).setTitle(t.optString("title","Item")).setItems(opts,(d,w)->{
+        dlg().setTitle(t.optString("title","Item")).setItems(opts,(d,w)->{
             try{
                 if(w==0){t.put("saved",!saved);saveRoadmaps();refreshRoadmap();}
                 else if(w==1){t.put("later",!later);saveRoadmaps();refreshRoadmap();}
@@ -463,7 +474,7 @@ public class MainActivity extends Activity {
             JSONArray links=t.optJSONArray("links"); if(links!=null)for(int i=0;i<links.length();i++){JSONObject l=links.optJSONObject(i);if(l==null)continue;String lu=l.optString("url","").trim();if(lu.isEmpty())continue;titles.add(l.optString("title","Resource "+(i+1)));urls.add(lu);}
             if(urls.isEmpty()){toast("No link configured");return;}
             if(urls.size()==1){startActivity(new Intent(Intent.ACTION_VIEW,Uri.parse(urls.get(0))));return;}
-            new AlertDialog.Builder(this).setTitle(t.optString("title","Resources")).setItems(titles.toArray(new String[0]),(d,w)->{try{startActivity(new Intent(Intent.ACTION_VIEW,Uri.parse(urls.get(w))));}catch(Exception e){toast("No app can open this link");}}).show();
+            dlg().setTitle(t.optString("title","Resources")).setItems(titles.toArray(new String[0]),(d,w)->{try{startActivity(new Intent(Intent.ACTION_VIEW,Uri.parse(urls.get(w))));}catch(Exception e){toast("No app can open this link");}}).show();
         }catch(Exception e){toast("Could not open link");}
     }
 
@@ -506,8 +517,9 @@ public class MainActivity extends Activity {
     }
     void taskCard(LinearLayout parent,JSONObject t,int idx){
         LinearLayout c=card(); addText(c,t.optString("title"),17); addText(c,t.optString("date")+" · "+t.optString("start","")+"–"+t.optString("end",""),12);
+        String taskState=taskStateLabelWithMeta(t); TextView stateTv=tv(taskState,13); stateTv.setTextColor(stateColor(taskState)); c.addView(stateTv);
         addText(c,"Estimate "+formatMin(t.optInt("estimateMin",0))+" · Actual "+formatMin(t.optInt("actualMin",0))+" · Remaining "+formatMin(t.optInt("remainingMin",0)),12);
-        addText(c,"Status: "+t.optString("status","not_started")+" · Priority: "+t.optString("priority","medium")+" · Category: "+t.optString("category","LEARNING"),11);
+        addText(c,"Priority: "+t.optString("priority","medium")+" · Category: "+t.optString("category","LEARNING"),11);
         LinearLayout r=row();
         Button st=primaryBtn("completed".equals(t.optString("status"))?"✓ Completed":"▶ Start / Resume"); st.setOnClickListener(v->{if(!"completed".equals(t.optString("status")))startTimerForTask(idx);}); r.addView(st,new LinearLayout.LayoutParams(0,-2,1));
         Button edit=iconBtn("✎","Edit task"); edit.setOnClickListener(v->taskDialog(t,idx)); r.addView(edit);
@@ -552,33 +564,110 @@ public class MainActivity extends Activity {
         Button reset=btn("Reset all data");reset.setOnClickListener(v->confirmReset());settings.addView(reset);box().addView(settings);
     }
 
+    /** CR-001: redesigned Add Task dialog — explicit labels, logical grouping, native date/time
+     *  pickers, an auto-calculated Duration, dropdowns for Priority/Category, inline validation
+     *  (including overlap checking against other tasks that day), and it preserves existing data
+     *  when editing instead of re-deriving it. */
     void taskDialog(JSONObject existing,int index){
-        LinearLayout l=new LinearLayout(this); l.setOrientation(LinearLayout.VERTICAL); l.setPadding(dp(10),0,dp(10),0);
-        EditText titleE=new EditText(this); titleE.setHint("Task title"); l.addView(titleE);
-        EditText dateE=new EditText(this); dateE.setHint("Date YYYY-MM-DD"); dateE.setText(existing==null?date():existing.optString("date")); l.addView(dateE);
-        EditText startE=new EditText(this); startE.setHint("Start HH:mm"); startE.setText(existing==null?"":existing.optString("start")); l.addView(startE);
-        EditText endE=new EditText(this); endE.setHint("End HH:mm"); endE.setText(existing==null?"":existing.optString("end")); l.addView(endE);
-        EditText estE=new EditText(this); estE.setHint("Estimate minutes (e.g. 90)"); estE.setInputType(2); estE.setText(existing==null?"60":String.valueOf(existing.optInt("estimateMin",60))); l.addView(estE);
-        EditText remE=new EditText(this); remE.setHint("Remaining minutes"); remE.setInputType(2); remE.setText(existing==null?"60":String.valueOf(existing.optInt("remainingMin",60))); l.addView(remE);
-        EditText priorityE=new EditText(this); priorityE.setHint("Priority: low / medium / high"); priorityE.setText(existing==null?"medium":existing.optString("priority","medium")); l.addView(priorityE);
-        EditText categoryE=new EditText(this); categoryE.setHint("Category: LEARNING / PROJECT / WORK / DISTRACTION / OTHER"); categoryE.setText(existing==null?"LEARNING":existing.optString("category","LEARNING")); l.addView(categoryE);
-        new AlertDialog.Builder(this).setTitle(existing==null?"Add Task":"Edit Task").setView(l)
-            .setPositiveButton("Save",(d,w)->{
+        LinearLayout l=new LinearLayout(this); l.setOrientation(LinearLayout.VERTICAL); l.setPadding(dp(16),dp(8),dp(16),dp(8));
+
+        addText(l,"Task title",11);
+        EditText titleE=new EditText(this); titleE.setHint("e.g. Study Streams API");
+        titleE.setText(existing==null?"":existing.optString("title")); l.addView(titleE);
+        TextView titleErr=tv("",11); titleErr.setTextColor(Color.parseColor("#FF6B6B")); titleErr.setVisibility(View.GONE); l.addView(titleErr);
+
+        addText(l,"Date",11);
+        String[] dateHolder={existing==null?null:existing.optString("date",null)};
+        l.addView(datePickerField(dateHolder));
+
+        addText(l,"Start                                          End",11);
+        LinearLayout timeRow=row();
+        final Runnable[] recompute=new Runnable[1];
+        EditText startE=timePickerField("Start",existing==null?"20:00":existing.optString("start","20:00"),()->{if(recompute[0]!=null)recompute[0].run();});
+        EditText endE=timePickerField("End",existing==null?"21:00":existing.optString("end","21:00"),()->{if(recompute[0]!=null)recompute[0].run();});
+        timeRow.addView(startE,new LinearLayout.LayoutParams(0,-2,1));
+        addSpace(timeRow,12);
+        timeRow.addView(endE,new LinearLayout.LayoutParams(0,-2,1));
+        l.addView(timeRow);
+        TextView timeErr=tv("",11); timeErr.setTextColor(Color.parseColor("#FF6B6B")); timeErr.setVisibility(View.GONE); l.addView(timeErr);
+
+        addText(l,"Duration",11);
+        TextView durationTv=tv("",15); durationTv.setTextColor(Color.parseColor("#9AA4B8")); l.addView(durationTv);
+        int[] durationMin={existing!=null?existing.optInt("estimateMin",60):60};
+        recompute[0]=()->{
+            int sm=toMinutes(startE.getText().toString().trim()), em=toMinutes(endE.getText().toString().trim());
+            if(sm>=0&&em>=0){ durationMin[0]=em>sm?em-sm:(24*60-sm+em); }
+            durationTv.setText(formatMin(durationMin[0])+" (calculated from start/end)");
+        };
+        recompute[0].run();
+
+        addText(l,"Priority",11);
+        Spinner priority=prioritySpinner(existing==null?"MEDIUM":existing.optString("priority","MEDIUM")); l.addView(priority);
+
+        addText(l,"Category",11);
+        Spinner cat=categorySpinner(existing==null?"LEARNING":existing.optString("category","LEARNING")); l.addView(cat);
+
+        ScrollView scroll=new ScrollView(this); scroll.addView(l);
+        AlertDialog dialog=dlg().setTitle(existing==null?"Add Task":"Edit Task").setView(scroll)
+            .setPositiveButton("Save",(d,w)->{}) // overridden below to control dismissal on validation failure
+            .setNegativeButton("Cancel",null).create();
+        dialog.setOnShowListener(dd->{
+            Button saveBtn=dialog.getButton(AlertDialog.BUTTON_POSITIVE);
+            saveBtn.setOnClickListener(v->{
+                titleErr.setVisibility(View.GONE); timeErr.setVisibility(View.GONE);
+                String titleVal=titleE.getText().toString().trim();
+                String startVal=startE.getText().toString().trim(), endVal=endE.getText().toString().trim();
+                String dateVal=dateHolder[0];
+                boolean valid=true;
+                if(titleVal.isEmpty()){titleErr.setText("Task title is required");titleErr.setVisibility(View.VISIBLE);valid=false;}
+                int sm=toMinutes(startVal), em=toMinutes(endVal);
+                if(sm<0||em<0){timeErr.setText("Please set both start and end time");timeErr.setVisibility(View.VISIBLE);valid=false;}
+                else if(em<=sm){timeErr.setText("End time must be after start time");timeErr.setVisibility(View.VISIBLE);valid=false;}
+                if(!valid)return;
                 try{
-                    JSONObject t=existing==null?new JSONObject():existing;
-                    if(existing==null) t.put("id",UUID.randomUUID().toString());
-                    t.put("title",titleE.getText().toString().trim());
-                    t.put("date",dateE.getText().toString().trim());
-                    t.put("start",startE.getText().toString().trim()); t.put("end",endE.getText().toString().trim());
-                    t.put("estimateMin",Integer.parseInt(estE.getText().toString().trim()));
-                    t.put("remainingMin",Integer.parseInt(remE.getText().toString().trim()));
-                    t.put("priority",priorityE.getText().toString().trim());
-                    String cat=categoryE.getText().toString().trim().toUpperCase(Locale.US);
-                    t.put("category",cat.isEmpty()?"LEARNING":cat);
-                    if(!t.has("actualMin"))t.put("actualMin",0); if(!t.has("status"))t.put("status","not_started");
-                    if(existing==null) tasks.put(t); scheduleReminder(this,t); saveState(); showPlan();
-                }catch(Exception e){toast("Could not save task: "+e.getMessage());}
-            }).setNegativeButton("Cancel",null).show();
+                    JSONObject candidate=new JSONObject();
+                    candidate.put("date",dateVal); candidate.put("start",startVal); candidate.put("end",endVal);
+                    ArrayList<JSONObject> overlaps=findOverlappingTasks(candidate,existing==null?-1:index);
+                    Runnable commit=()->{
+                        try{
+                            JSONObject t=existing==null?new JSONObject():existing;
+                            if(existing==null) t.put("id",UUID.randomUUID().toString());
+                            t.put("title",titleVal);
+                            t.put("date",dateVal);
+                            t.put("start",startVal); t.put("end",endVal);
+                            t.put("estimateMin",durationMin[0]);
+                            if(existing==null) t.put("remainingMin",durationMin[0]);
+                            t.put("priority",String.valueOf(priority.getSelectedItem()));
+                            t.put("category",String.valueOf(cat.getSelectedItem()));
+                            if(!t.has("actualMin"))t.put("actualMin",0); if(!t.has("status"))t.put("status","not_started");
+                            if(existing==null) tasks.put(t);
+                            scheduleReminder(this,t); saveState(); dialog.dismiss(); showPlan();
+                        }catch(Exception e){toast("Could not save task: "+safeMessage(e));}
+                    };
+                    if(!overlaps.isEmpty()){
+                        StringBuilder names=new StringBuilder();
+                        for(JSONObject o:overlaps){if(names.length()>0)names.append(", ");names.append(o.optString("title","Task")).append(" (").append(o.optString("start")).append("–").append(o.optString("end")).append(")");}
+                        dlg().setTitle("Overlapping time")
+                            .setMessage("This overlaps with: "+names+". Save anyway?")
+                            .setPositiveButton("Save anyway",(dd2,ww2)->commit.run())
+                            .setNegativeButton("Go back",null).show();
+                    } else commit.run();
+                }catch(Exception e){toast("Could not save task: "+safeMessage(e));}
+            });
+        });
+        dialog.show();
+    }
+    /** CR-001: warn (don't silently allow) when a task's date/time overlaps another task the same day. */
+    ArrayList<JSONObject> findOverlappingTasks(JSONObject candidate,int excludeIndex){
+        ArrayList<JSONObject> out=new ArrayList<>();
+        String dateVal=candidate.optString("date","");
+        for(int i=0;i<tasks.length();i++){
+            if(i==excludeIndex)continue;
+            JSONObject t=tasks.optJSONObject(i); if(t==null)continue;
+            if(!dateVal.equals(t.optString("date","")))continue;
+            if(timesOverlap(candidate.optString("start"),candidate.optString("end"),t.optString("start"),t.optString("end")))out.add(t);
+        }
+        return out;
     }
 
     LinearLayout dotAdapterRow(String label,int color,View convert){
@@ -657,7 +746,7 @@ public class MainActivity extends Activity {
         EditText titleE=new EditText(this);titleE.setHint("Activity");l.addView(titleE);
         EditText durE=new EditText(this);durE.setHint("Duration in minutes");durE.setInputType(2);l.addView(durE);
         Spinner cat=categorySpinner("OTHER");l.addView(cat);
-        new AlertDialog.Builder(this).setTitle("Log past activity").setView(l).setPositiveButton("Save",(d,w)->{try{int min=Math.max(1,Integer.parseInt(durE.getText().toString().trim()));JSONObject s=new JSONObject();s.put("id",UUID.randomUUID().toString());s.put("title",titleE.getText().toString().trim());s.put("category",String.valueOf(cat.getSelectedItem()));s.put("date",date());s.put("durationMs",min*60000L);s.put("createdAt",dateTime());sessions.put(s);saveState();showHome();}catch(Exception e){toast("Could not log activity: "+safeMessage(e));}}).setNegativeButton("Cancel",null).show();
+        dlg().setTitle("Log past activity").setView(l).setPositiveButton("Save",(d,w)->{try{int min=Math.max(1,Integer.parseInt(durE.getText().toString().trim()));JSONObject s=new JSONObject();s.put("id",UUID.randomUUID().toString());s.put("title",titleE.getText().toString().trim());s.put("category",String.valueOf(cat.getSelectedItem()));s.put("date",date());s.put("durationMs",min*60000L);s.put("createdAt",dateTime());sessions.put(s);saveState();showHome();}catch(Exception e){toast("Could not log activity: "+safeMessage(e));}}).setNegativeButton("Cancel",null).show();
     }
 
     void manualStartDialog(){
@@ -665,14 +754,14 @@ public class MainActivity extends Activity {
         LinearLayout l=new LinearLayout(this);l.setOrientation(LinearLayout.VERTICAL);l.setPadding(dp(8),0,dp(8),0);
         EditText titleE=new EditText(this);titleE.setHint("What are you doing?");l.addView(titleE);
         Spinner cat=categorySpinner("LEARNING");l.addView(cat);
-        new AlertDialog.Builder(this).setTitle("Start manual activity").setView(l).setPositiveButton("Start",(d,w)->{String title=titleE.getText().toString().trim();if(title.isEmpty()){toast("Enter an activity name.");return;}startPersistentTimer(title,String.valueOf(cat.getSelectedItem()),null,null);}).setNegativeButton("Cancel",null).show();
+        dlg().setTitle("Start manual activity").setView(l).setPositiveButton("Start",(d,w)->{String title=titleE.getText().toString().trim();if(title.isEmpty()){toast("Enter an activity name.");return;}startPersistentTimer(title,String.valueOf(cat.getSelectedItem()),null,null);}).setNegativeButton("Cancel",null).show();
     }
 
     void chooseTaskForTimer(){
         if(getActiveTimer()!=null){toast("A timer is already running.");return;}
         if(tasks.length()==0){toast("Create a task first.");return;}
         String[] names=new String[tasks.length()]; for(int i=0;i<tasks.length();i++){JSONObject t=tasks.optJSONObject(i);names[i]=t.optString("title");}
-        new AlertDialog.Builder(this).setTitle("Start task").setItems(names,(d,w)->startTimerForTask(w)).show();
+        dlg().setTitle("Start task").setItems(names,(d,w)->startTimerForTask(w)).show();
     }
 
     void startTimerForTask(int idx){
@@ -773,9 +862,9 @@ public class MainActivity extends Activity {
     void saveCompletedFor(String id,HashSet<String> set){try{SharedPreferences sp=getSharedPreferences(PREFS,0);JSONObject all=new JSONObject(sp.getString("completedByRoadmap","{}"));JSONArray a=new JSONArray();for(String x:set)a.put(x);all.put(id,a);sp.edit().putString("completedByRoadmap",all.toString()).apply();completed.clear();completed.addAll(set);}catch(Exception ignored){}}
     void editRoadmapDialog(JSONObject r){
         LinearLayout l=new LinearLayout(this);l.setOrientation(LinearLayout.VERTICAL);l.setPadding(dp(8),0,dp(8),0);EditText name=new EditText(this);name.setHint("Roadmap name");name.setText(roadmapName(r));l.addView(name);EditText desc=new EditText(this);desc.setHint("Description");desc.setText(roadmapDescription(r));l.addView(desc);EditText icon=new EditText(this);icon.setHint("Icon, e.g. 🧠");icon.setText(r.optString("icon","📚"));l.addView(icon);
-        new AlertDialog.Builder(this).setTitle("Edit roadmap").setView(l).setPositiveButton("Save",(d,w)->{try{r.put("name",name.getText().toString().trim());r.put("description",desc.getText().toString().trim());r.put("icon",icon.getText().toString().trim());saveRoadmaps();refreshRoadmap();}catch(Exception e){toast("Could not edit roadmap");}}).setNegativeButton("Cancel",null).show();
+        dlg().setTitle("Edit roadmap").setView(l).setPositiveButton("Save",(d,w)->{try{r.put("name",name.getText().toString().trim());r.put("description",desc.getText().toString().trim());r.put("icon",icon.getText().toString().trim());saveRoadmaps();refreshRoadmap();}catch(Exception e){toast("Could not edit roadmap");}}).setNegativeButton("Cancel",null).show();
     }
-    void editPhaseDialog(JSONObject ph){LinearLayout l=new LinearLayout(this);l.setOrientation(LinearLayout.VERTICAL);EditText name=new EditText(this);name.setHint("Phase title");name.setText(ph.optString("title"));l.addView(name);EditText duration=new EditText(this);duration.setHint("Duration");duration.setText(ph.optString("duration"));l.addView(duration);new AlertDialog.Builder(this).setTitle("Edit phase").setView(l).setPositiveButton("Save",(d,w)->{try{ph.put("title",name.getText().toString().trim());ph.put("duration",duration.getText().toString().trim());saveRoadmaps();refreshRoadmap();}catch(Exception e){toast("Could not edit phase");}}).setNegativeButton("Cancel",null).show();}
+    void editPhaseDialog(JSONObject ph){LinearLayout l=new LinearLayout(this);l.setOrientation(LinearLayout.VERTICAL);EditText name=new EditText(this);name.setHint("Phase title");name.setText(ph.optString("title"));l.addView(name);EditText duration=new EditText(this);duration.setHint("Duration");duration.setText(ph.optString("duration"));l.addView(duration);dlg().setTitle("Edit phase").setView(l).setPositiveButton("Save",(d,w)->{try{ph.put("title",name.getText().toString().trim());ph.put("duration",duration.getText().toString().trim());saveRoadmaps();refreshRoadmap();}catch(Exception e){toast("Could not edit phase");}}).setNegativeButton("Cancel",null).show();}
     void editTopicDialog(JSONObject ph,JSONObject existing){
         LinearLayout l=new LinearLayout(this);l.setOrientation(LinearLayout.VERTICAL);l.setPadding(dp(16),dp(8),dp(16),dp(8));
 
@@ -808,7 +897,7 @@ public class MainActivity extends Activity {
         EditText links=new EditText(this);links.setHint("Docs | https://...");links.setMinLines(2);links.setText(existing==null?"":linksToText(existing.optJSONArray("links")));l.addView(links);
 
         ScrollView scroll=new ScrollView(this); scroll.addView(l);
-        new AlertDialog.Builder(this).setTitle(existing==null?"Add roadmap item":"Edit roadmap item").setView(scroll).setPositiveButton("Save",(d,w)->{try{
+        dlg().setTitle(existing==null?"Add roadmap item":"Edit roadmap item").setView(scroll).setPositiveButton("Save",(d,w)->{try{
             JSONObject t=existing==null?new JSONObject():existing;if(existing==null){t.put("id",UUID.randomUUID().toString());JSONArray ts=ph.optJSONArray("topics");if(ts==null){ts=new JSONArray();ph.put("topics",ts);}ts.put(t);}
             t.put("title",name.getText().toString().trim());
             t.put("priority",String.valueOf(priority.getSelectedItem()));
@@ -824,7 +913,7 @@ public class MainActivity extends Activity {
     String linksToText(JSONArray links){if(links==null)return "";StringBuilder b=new StringBuilder();for(int i=0;i<links.length();i++){JSONObject l=links.optJSONObject(i);if(l==null)continue;if(b.length()>0)b.append("\n");b.append(l.optString("title","Resource")).append(" | ").append(l.optString("url",""));}return b.toString();}
     JSONArray parseLinks(String raw){JSONArray out=new JSONArray();if(raw==null||raw.trim().isEmpty())return out;for(String line:raw.split("\\n")){String[] p=line.split("\\|",2);if(p.length<2)continue;String title=p[0].trim(),url=p[1].trim();if(url.isEmpty())continue;JSONObject o=new JSONObject();try{o.put("title",title.isEmpty()?"Resource":title);o.put("url",url);out.put(o);}catch(Exception ignored){}}return out;}
     String joinJsonArray(JSONArray a){if(a==null)return "";StringBuilder b=new StringBuilder();for(int i=0;i<a.length();i++){if(i>0)b.append(", ");b.append(a.optString(i));}return b.toString();}
-    void addPhaseDialog(){LinearLayout l=new LinearLayout(this);l.setOrientation(LinearLayout.VERTICAL);EditText name=new EditText(this);name.setHint("Phase title");l.addView(name);EditText duration=new EditText(this);duration.setHint("Duration, e.g. Week 1");l.addView(duration);new AlertDialog.Builder(this).setTitle("Add phase").setView(l).setPositiveButton("Add",(d,w)->{try{JSONArray ps=roadmap.optJSONArray("phases");if(ps==null){ps=new JSONArray();roadmap.put("phases",ps);}JSONObject ph=new JSONObject();ph.put("id",UUID.randomUUID().toString());ph.put("number",ps.length()+1);ph.put("title",name.getText().toString().trim());ph.put("duration",duration.getText().toString().trim());ph.put("topics",new JSONArray());ps.put(ph);saveRoadmaps();refreshRoadmap();}catch(Exception e){toast("Could not add phase");}}).setNegativeButton("Cancel",null).show();}
+    void addPhaseDialog(){LinearLayout l=new LinearLayout(this);l.setOrientation(LinearLayout.VERTICAL);EditText name=new EditText(this);name.setHint("Phase title");l.addView(name);EditText duration=new EditText(this);duration.setHint("Duration, e.g. Week 1");l.addView(duration);dlg().setTitle("Add phase").setView(l).setPositiveButton("Add",(d,w)->{try{JSONArray ps=roadmap.optJSONArray("phases");if(ps==null){ps=new JSONArray();roadmap.put("phases",ps);}JSONObject ph=new JSONObject();ph.put("id",UUID.randomUUID().toString());ph.put("number",ps.length()+1);ph.put("title",name.getText().toString().trim());ph.put("duration",duration.getText().toString().trim());ph.put("topics",new JSONArray());ps.put(ph);saveRoadmaps();refreshRoadmap();}catch(Exception e){toast("Could not add phase");}}).setNegativeButton("Cancel",null).show();}
     String roadmapItemLabel(JSONObject r){
         if(r!=null){String type=r.optString("itemType","").trim();if("question".equalsIgnoreCase(type))return "questions";String name=roadmapName(r).toLowerCase(Locale.US);if(name.contains("dsa")||name.contains("data structures")||name.contains("algorithm"))return "questions";}
         return "topics";
@@ -846,6 +935,53 @@ public class MainActivity extends Activity {
         ArrayList<JSONObject> out=new ArrayList<>(map.values());for(JSONObject g:out){try{String sid=g.optString("scheduleId","");if(!sid.isEmpty()&&isPlanCompletedForDate(sid,day)){g.put("completed",true);g.put("resumable",false);}}catch(Exception ignored){}}return out;
     }
     boolean hasOpenSessionForSchedule(JSONObject b){String id=b.optString("id","");if(id.isEmpty())return false;for(JSONObject s:sessionObjectsForDate(date()))if(id.equals(s.optString("scheduleId"))&&!s.optBoolean("completed",false))return true;return false;}
+
+    // ---------- CR-003: explicit activity states ----------
+    // "tracked" used to mean two different things in this app: (a) this schedule block's category is
+    // configured to be included in time tracking, and (b) time was actually recorded for it today.
+    // These helpers separate those two ideas: state = what's actually happening right now, and the
+    // "track" boolean is only ever mentioned separately, as an opt-out note.
+    boolean isScheduleRunning(JSONObject b){JSONObject a=getActiveTimer();return a!=null&&!b.optString("id","").isEmpty()&&b.optString("id","").equals(a.optString("scheduleId",""));}
+    boolean isTaskRunning(JSONObject t){JSONObject a=getActiveTimer();return a!=null&&!t.optString("id","").isEmpty()&&t.optString("id","").equals(a.optString("taskId",""));}
+    String scheduleStateLabel(JSONObject b){
+        if(isPlanCompletedForDate(b.optString("id"),date()))return "✓ Completed";
+        if(isScheduleRunning(b))return "🔴 Running";
+        if(hasOpenSessionForSchedule(b))return "⏸ Paused";
+        return "○ Not started";
+    }
+    String taskStateLabel(JSONObject t){
+        if("completed".equals(t.optString("status")))return "✓ Completed";
+        if(isTaskRunning(t))return "🔴 Running";
+        if("in_progress".equals(t.optString("status")))return "⏸ Paused";
+        return "○ Not started";
+    }
+    int stateColor(String label){
+        if(label==null)return Color.parseColor("#9AA4B8");
+        if(label.contains("Completed"))return Color.parseColor("#34C77B");
+        if(label.contains("Running"))return Color.parseColor("#FF6B6B");
+        if(label.contains("Paused"))return Color.parseColor("#FFB84F");
+        return Color.parseColor("#9AA4B8");
+    }
+    /** Appends the relevant duration to a schedule state label (e.g. "🔴 Running · 24m"),
+     *  so the state line itself distinguishes scheduled tracking from actual recorded time (CR-003). */
+    String scheduleStateLabelWithMeta(JSONObject b){
+        String state=scheduleStateLabel(b);
+        if(state.contains("Running")){long ms=activeElapsedMsForDate(date());return state+" · "+formatDurationSmart(ms);}
+        if(state.contains("Completed")){long ms=trackedMsForSchedule(b.optString("id",""),date());return ms>0?state+" · "+formatDurationSmart(ms):state;}
+        return state;
+    }
+    String taskStateLabelWithMeta(JSONObject t){
+        String state=taskStateLabel(t);
+        if(state.contains("Running")){long ms=activeElapsedMsForDate(date());return state+" · "+formatDurationSmart(ms);}
+        if(state.contains("Completed")){int min=t.optInt("actualMin",0);return min>0?state+" · "+formatMin(min):state;}
+        return state;
+    }
+    long trackedMsForSchedule(String scheduleId,String day){
+        if(scheduleId==null||scheduleId.isEmpty())return 0;
+        long total=0;
+        for(int i=0;i<sessions.length();i++){JSONObject s=sessions.optJSONObject(i);if(s!=null&&day.equals(s.optString("date"))&&scheduleId.equals(s.optString("scheduleId")))total+=s.optLong("durationMs",0);}
+        return total;
+    }
     String formatDurationSmart(long ms){if(ms<60000)return Math.max(1,ms/1000)+"s";return formatDuration(ms);}
     String sessionLine(JSONObject s){return s.optString("date")+" · "+s.optString("title")+" · "+formatDurationSmart(s.optLong("durationMs",0));}
 
@@ -879,11 +1015,12 @@ public class MainActivity extends Activity {
         boolean overlap=blockOverlapsAny(b);
         LinearLayout outer=new LinearLayout(this); outer.setOrientation(LinearLayout.VERTICAL);
         LinearLayout row=row(); row.setPadding(0,dp(7),0,dp(7));
-        View stripe=new View(this);int color;try{color=Color.parseColor(b.optString("color","#4F7CFF"));}catch(Exception e){color=Color.parseColor("#4F7CFF");}stripe.setBackgroundColor(color);row.addView(stripe,new LinearLayout.LayoutParams(dp(6),dp(72)));
+        View stripe=new View(this);int color;try{color=Color.parseColor(b.optString("color","#4F7CFF"));}catch(Exception e){color=Color.parseColor("#4F7CFF");}stripe.setBackgroundColor(color);row.addView(stripe,new LinearLayout.LayoutParams(dp(6),dp(88)));
         LinearLayout mid=new LinearLayout(this);mid.setOrientation(LinearLayout.VERTICAL);mid.setPadding(dp(12),0,dp(8),0);
         addText(mid,b.optString("start")+" – "+b.optString("end"),12);
         TextView titleTv=tv(blockTitle(b),16); if(b.optString("title","").trim().isEmpty())titleTv.setTextColor(Color.parseColor("#9AA4B8")); mid.addView(titleTv,new LinearLayout.LayoutParams(-1,-2));
-        mid.addView(labelWithDot(b.optString("category","OTHER")+(b.optBoolean("track",true)?" · tracked":""),categoryColor(b.optString("category","OTHER")),11));
+        mid.addView(labelWithDot(b.optString("category","OTHER")+(b.optBoolean("track",true)?" · in time tracking":""),categoryColor(b.optString("category","OTHER")),11));
+        String stateLabel=scheduleStateLabelWithMeta(b); TextView stateTv=tv(stateLabel,12); stateTv.setTextColor(stateColor(stateLabel)); mid.addView(stateTv);
         if(overlap){TextView warn=tv("⚠ Overlaps another block",11);warn.setTextColor(Color.parseColor("#FFB84F"));mid.addView(warn);}
         row.addView(mid,new LinearLayout.LayoutParams(0,-2,1));
         JSONObject alarm=b.optJSONObject("alarm");if(alarm!=null&&alarm.optBoolean("enabled",false)){TextView al=tv("🔔",16);row.addView(al,new LinearLayout.LayoutParams(dp(34),-2));}
@@ -898,7 +1035,7 @@ public class MainActivity extends Activity {
     }
     void scheduleBlockQuickMenu(JSONObject b){
         String[] opts={"▶ Start","✎ Edit","🗑 Delete","Cancel"};
-        new AlertDialog.Builder(this).setTitle(blockTitle(b)).setItems(opts,(d,w)->{
+        dlg().setTitle(blockTitle(b)).setItems(opts,(d,w)->{
             if(w==0)startScheduleBlock(b);
             else if(w==1)scheduleBlockDialog(b,-1);
             else if(w==2)deleteScheduleBlock(b);
@@ -911,16 +1048,40 @@ public class MainActivity extends Activity {
     static final String[] ALARM_MIN_OPTIONS={"5","10","15","30","45","60"};
 
     /** A read-only EditText that opens a native TimePickerDialog when tapped. Stores value as HH:mm (24h). */
-    EditText timePickerField(String hint,String initial){
+    EditText timePickerField(String hint,String initial){ return timePickerField(hint,initial,null); }
+    /** Same as above, but runs `onChanged` after a time is picked — used to auto-recalculate a
+     *  dependent Duration field (CR-001) when Start/End change. */
+    EditText timePickerField(String hint,String initial,Runnable onChanged){
         EditText e=new EditText(this); e.setHint(hint); e.setText(initial==null?"":initial);
         e.setFocusable(false); e.setClickable(true); e.setCursorVisible(false);
         e.setOnClickListener(v->{
             int h=8,m=0;
             String cur=e.getText().toString().trim();
             if(cur.matches("^\\d{1,2}:\\d{2}$")){String[] p=cur.split(":");try{h=Integer.parseInt(p[0]);m=Integer.parseInt(p[1]);}catch(Exception ignored){}}
-            new TimePickerDialog(this,(view,hh,mm)->e.setText(String.format(Locale.US,"%02d:%02d",hh,mm)),h,m,true).show();
+            new TimePickerDialog(this,R.style.AppTheme_Dialog,(view,hh,mm)->{e.setText(String.format(Locale.US,"%02d:%02d",hh,mm));if(onChanged!=null)onChanged.run();},h,m,true).show();
         });
         return e;
+    }
+    /** A read-only EditText that opens a native DatePickerDialog when tapped. `holder[0]` carries the
+     *  ISO yyyy-MM-dd value; the field itself displays a human-readable date (CR-001). */
+    EditText datePickerField(String[] holder){
+        if(holder[0]==null||holder[0].trim().isEmpty())holder[0]=date();
+        EditText e=new EditText(this); e.setText(displayDate(holder[0]));
+        e.setFocusable(false); e.setClickable(true); e.setCursorVisible(false);
+        e.setOnClickListener(v->{
+            Calendar c=Calendar.getInstance();
+            try{c.setTime(new SimpleDateFormat("yyyy-MM-dd",Locale.US).parse(holder[0]));}catch(Exception ignored){}
+            new DatePickerDialog(this,R.style.AppTheme_Dialog,(view,y,mo,d)->{
+                holder[0]=String.format(Locale.US,"%04d-%02d-%02d",y,mo+1,d);
+                e.setText(displayDate(holder[0]));
+            },c.get(Calendar.YEAR),c.get(Calendar.MONTH),c.get(Calendar.DAY_OF_MONTH)).show();
+        });
+        return e;
+    }
+    /** yyyy-MM-dd -> "28 Aug 2026" for display; raw ISO is still what's stored/exported (CR-055 groundwork). */
+    String displayDate(String iso){
+        try{return new SimpleDateFormat("d MMM yyyy",Locale.US).format(new SimpleDateFormat("yyyy-MM-dd",Locale.US).parse(iso));}
+        catch(Exception e){return iso==null?"":iso;}
     }
 
     /** Toggleable day-of-week chips. Returns the container; selected days are tracked in `selected`. */
@@ -1024,7 +1185,7 @@ public class MainActivity extends Activity {
         alarm.setOnCheckedChangeListener((btn,checked)->minsSp.setVisibility(checked?View.VISIBLE:View.GONE));
 
         ScrollView scroll=new ScrollView(this); scroll.addView(l);
-        AlertDialog dialog=new AlertDialog.Builder(this).setTitle(existing==null?"Add schedule block":"Edit schedule block").setView(scroll)
+        AlertDialog dialog=dlg().setTitle(existing==null?"Add schedule block":"Edit schedule block").setView(scroll)
             .setPositiveButton("Save",(d,w)->{}) // overridden below to control dismissal
             .setNegativeButton("Cancel",null).create();
         dialog.setOnShowListener(dd->{
@@ -1065,7 +1226,7 @@ public class MainActivity extends Activity {
                     };
                     if(!overlaps.isEmpty()){
                         StringBuilder names=new StringBuilder(); for(JSONObject o:overlaps){if(names.length()>0)names.append(", ");names.append(blockTitle(o)).append(" (").append(o.optString("start")).append("–").append(o.optString("end")).append(")");}
-                        new AlertDialog.Builder(this).setTitle("Overlapping time")
+                        dlg().setTitle("Overlapping time")
                             .setMessage("This overlaps with: "+names+". Save anyway?")
                             .setPositiveButton("Save anyway",(dd2,ww2)->commit.run())
                             .setNegativeButton("Go back",null).show();
@@ -1108,7 +1269,7 @@ public class MainActivity extends Activity {
 
     // ---------- Delete helpers ----------
     void confirmDelete(String title,String message,Runnable onConfirm){
-        new AlertDialog.Builder(this).setTitle(title).setMessage(message)
+        dlg().setTitle(title).setMessage(message)
             .setPositiveButton("Delete",(d,w)->onConfirm.run())
             .setNegativeButton("Cancel",null).show();
     }
@@ -1196,12 +1357,12 @@ public class MainActivity extends Activity {
     void importBackup(){Intent i=new Intent(Intent.ACTION_OPEN_DOCUMENT);i.setType("application/json");i.addCategory(Intent.CATEGORY_OPENABLE);startActivityForResult(i,300);}
     void exportBackup(){Intent i=new Intent(Intent.ACTION_CREATE_DOCUMENT);i.setType("application/json");i.putExtra(Intent.EXTRA_TITLE,"devtrack-backup-"+date()+".json");startActivityForResult(i,301);}
     @Override protected void onActivityResult(int req,int result,Intent data){super.onActivityResult(req,result,data);if(result!=RESULT_OK||data==null)return;try{
-        if(req==REQ_IMPORT){String raw=read(data.getData());JSONObject r=new JSONObject(raw);String fmt=r.optString("format");if(!"trackit-roadmap".equals(fmt)&&!"devtrack-roadmap".equals(fmt))throw new Exception("Unsupported roadmap format");normalizeRoadmap(r,UUID.randomUUID().toString(),"Imported Roadmap","📚");String id=r.optString("id");new AlertDialog.Builder(this).setTitle("Import roadmap").setMessage("Import "+roadmapName(r)+" as a new editable roadmap?").setPositiveButton("Import",(d,w)->{try{String finalId=findRoadmap(id)!=null?UUID.randomUUID().toString():id;r.put("id",finalId);roadmaps.put(r);setCurrentRoadmap(finalId);saveRoadmaps();showLearn();toast("Roadmap imported");}catch(Exception e){toast("Could not import roadmap: "+safeMessage(e));}}).setNegativeButton("Cancel",null).show();}
+        if(req==REQ_IMPORT){String raw=read(data.getData());JSONObject r=new JSONObject(raw);String fmt=r.optString("format");if(!"trackit-roadmap".equals(fmt)&&!"devtrack-roadmap".equals(fmt))throw new Exception("Unsupported roadmap format");normalizeRoadmap(r,UUID.randomUUID().toString(),"Imported Roadmap","📚");String id=r.optString("id");dlg().setTitle("Import roadmap").setMessage("Import "+roadmapName(r)+" as a new editable roadmap?").setPositiveButton("Import",(d,w)->{try{String finalId=findRoadmap(id)!=null?UUID.randomUUID().toString():id;r.put("id",finalId);roadmaps.put(r);setCurrentRoadmap(finalId);saveRoadmaps();showLearn();toast("Roadmap imported");}catch(Exception e){toast("Could not import roadmap: "+safeMessage(e));}}).setNegativeButton("Cancel",null).show();}
         else if(req==REQ_EXPORT){write(data.getData(),roadmap.toString(2));toast("Roadmap exported");}
         else if(req==REQ_SCHEDULE_IMPORT){
             String raw=read(data.getData()); JSONObject sch=new JSONObject(raw); validateSchedule(sch);
             JSONArray imported=sch.optJSONArray("blocks");
-            new AlertDialog.Builder(this).setTitle("Import daily schedule").setMessage("Replace the current schedule with "+imported.length()+" blocks? Alarm settings included in the JSON will be applied.").setPositiveButton("Replace",(d,w)->{
+            dlg().setTitle("Import daily schedule").setMessage("Replace the current schedule with "+imported.length()+" blocks? Alarm settings included in the JSON will be applied.").setPositiveButton("Replace",(d,w)->{
                 for(int i=0;i<schedules.length();i++){JSONObject old=schedules.optJSONObject(i);if(old!=null)ReminderReceiver.cancel(this,old.optString("id"));} schedules=imported; saveState(); scheduleAllImportedAlarms(); showPlan(); toast("Daily schedule imported");
             }).setNegativeButton("Cancel",null).show();
         }
@@ -1211,5 +1372,5 @@ public class MainActivity extends Activity {
     }catch(Exception e){toast("Import/export failed: "+e.getMessage());}}
     String read(Uri u)throws Exception{InputStream in=getContentResolver().openInputStream(u);ByteArrayOutputStream b=new ByteArrayOutputStream();byte[] x=new byte[8192];int n;while((n=in.read(x))>0)b.write(x,0,n);return b.toString("UTF-8");}
     void write(Uri u,String s)throws Exception{OutputStream out=getContentResolver().openOutputStream(u);out.write(s.getBytes(StandardCharsets.UTF_8));out.close();}
-    void confirmReset(){new AlertDialog.Builder(this).setTitle("Reset all data?").setMessage("This deletes roadmap progress, tasks and study sessions from this device.").setPositiveButton("Delete",(d,w)->{completed.clear();tasks=new JSONArray();sessions=new JSONArray();schedules=new JSONArray();clearActiveTimer();getSharedPreferences(PREFS,0).edit().remove("roadmapOverride").remove(KEY_COMPLETED_PLANS).remove(KEY_ROADMAPS).remove(KEY_CURRENT_ROADMAP).remove("completedByRoadmap").apply();saveState();showHome();}).setNegativeButton("Cancel",null).show();}
+    void confirmReset(){dlg().setTitle("Reset all data?").setMessage("This deletes roadmap progress, tasks and study sessions from this device.").setPositiveButton("Delete",(d,w)->{completed.clear();tasks=new JSONArray();sessions=new JSONArray();schedules=new JSONArray();clearActiveTimer();getSharedPreferences(PREFS,0).edit().remove("roadmapOverride").remove(KEY_COMPLETED_PLANS).remove(KEY_ROADMAPS).remove(KEY_CURRENT_ROADMAP).remove("completedByRoadmap").apply();saveState();showHome();}).setNegativeButton("Cancel",null).show();}
 }
