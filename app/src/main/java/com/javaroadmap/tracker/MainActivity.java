@@ -33,6 +33,7 @@ public class MainActivity extends Activity {
     String currentRoadmapId;
     JSONArray tasks, sessions, schedules;
     HashSet<String> completed=new HashSet<>();
+    HashSet<String> expandedTopics=new HashSet<>();
     TextView title;
     int page=0;
     String startupError;
@@ -63,6 +64,10 @@ public class MainActivity extends Activity {
     Button dangerIconBtn(String icon,String description){
         Button b=iconBtn(icon,description); b.setTextColor(Color.parseColor("#FF6B6B")); return b;
     }
+    Button dangerMicroIconBtn(String icon,String description){
+        Button b=microIconBtn(icon,description); b.setTextColor(Color.parseColor("#FF6B6B")); return b;
+    }
+
     /** Even smaller icon-only button for dense rows (topic actions, etc). Still a real tap target, just visually lighter. */
     Button tinyIconBtn(String icon,String description){
         Button b=new Button(this); b.setText(icon); b.setTextColor(Color.parseColor("#C7CEDC"));
@@ -77,8 +82,8 @@ public class MainActivity extends Activity {
     Button microIconBtn(String icon,String description){
         Button b=new Button(this); b.setText(icon); b.setTextColor(Color.parseColor("#C7CEDC"));
         b.setAllCaps(false); b.setBackgroundResource(R.drawable.secondary_button_bg);
-        b.setMinWidth(dp(28)); b.setMinHeight(dp(28));
-        b.setPadding(dp(2),dp(2),dp(2),dp(2)); b.setTextSize(12);
+        b.setMinWidth(dp(24)); b.setMinHeight(dp(24));
+        b.setPadding(dp(1),dp(1),dp(1),dp(1)); b.setTextSize(11);
         b.setContentDescription(description);
         LinearLayout.LayoutParams lp=new LinearLayout.LayoutParams(-2,-2); lp.setMargins(dp(3),0,0,0); b.setLayoutParams(lp);
         return b;
@@ -205,6 +210,10 @@ public class MainActivity extends Activity {
         findViewById(R.id.navPlan).setOnClickListener(v->showPlan());
         findViewById(R.id.navProgress).setOnClickListener(v->showProgress());
     }
+    void setNavSelected(int id){
+        int[] all={R.id.navHome,R.id.navLearn,R.id.navPlan,R.id.navProgress};
+        for(int navId:all){View v=findViewById(navId);if(v!=null)v.setSelected(navId==id);}
+    }
     void base(String heading,String sub){
         content.removeAllViews();
         ScrollView sc=new ScrollView(this); sc.setFillViewport(true);
@@ -225,7 +234,7 @@ public class MainActivity extends Activity {
     LinearLayout box(){ return (LinearLayout)content.getTag(); }
 
     void showHome(){
-        page=0; base("DevTrack","Your day, your time, your progress");
+        page=0; base("DevTrack","Your day, your time, your progress"); setNavSelected(R.id.navHome);
         String today=date();
         long tracked=todaySessionMs(today)+activeElapsedMsForDate(today);
         int total=topicCount(), done=completedFor(currentRoadmapId).size(), pct=total==0?0:Math.round(done*100f/total);
@@ -306,7 +315,7 @@ public class MainActivity extends Activity {
     }
 
     void showLearn(){
-        page=1; base("Learn","Dynamic roadmaps — import, edit and track each learning path separately.");
+        page=1; base("Learn","Dynamic roadmaps — import, edit and track each learning path separately."); setNavSelected(R.id.navLearn);
         if(roadmaps==null||roadmaps.length()==0){
             LinearLayout empty=card(); addText(empty,"No roadmaps yet",20); addText(empty,"Import a roadmap JSON to get started.",13); Button imp=primaryBtn("📥 Import Roadmap JSON"); imp.setOnClickListener(v->importRoadmap()); empty.addView(imp); box().addView(empty); return;
         }
@@ -334,7 +343,7 @@ public class MainActivity extends Activity {
     }
     void showRoadmap(){
         if(roadmap==null){showLearn();return;}
-        baseWithBack(roadmapName(roadmap),roadmapDescription(roadmap),()->showLearn());
+        baseWithBack(roadmapName(roadmap),roadmapDescription(roadmap),()->showLearn()); setNavSelected(R.id.navLearn);
         LinearLayout c=card(); addText(c,"ROADMAP PROGRESS",11);
         int total=topicCount(), done=completedFor(currentRoadmapId).size(), pct=total==0?0:Math.round(done*100f/total);
         addText(c,done+" / "+total+" "+roadmapItemLabel(roadmap)+" · "+pct+"%",26);
@@ -356,7 +365,7 @@ public class MainActivity extends Activity {
             addText(pc,ph.optString("duration","")+" · "+topics.length()+" items · "+d+" done · "+pp+"%",12);
             ProgressBar bar=new ProgressBar(this,null,android.R.attr.progressBarStyleHorizontal); bar.setMax(100); bar.setProgress(pp); pc.addView(bar,new LinearLayout.LayoutParams(-1,dp(8)));
             LinearLayout list=new LinearLayout(this); list.setOrientation(LinearLayout.VERTICAL); pc.addView(list);
-            LinearLayout phaseActions=row(); Button ep=iconBtn("✎","Edit phase"); ep.setOnClickListener(v->editPhaseDialog(ph)); phaseActions.addView(ep); Button dp=dangerIconBtn("🗑","Delete phase"); dp.setOnClickListener(v->deletePhase(ph)); phaseActions.addView(dp); Button at=btn("＋ Add item"); at.setOnClickListener(v->editTopicDialog(ph,null)); phaseActions.addView(at,new LinearLayout.LayoutParams(0,-2,1)); list.addView(phaseActions);
+            LinearLayout phaseActions=row(); Button ep=microIconBtn("✎","Edit phase"); ep.setOnClickListener(v->editPhaseDialog(ph)); phaseActions.addView(ep); Button dp=dangerMicroIconBtn("🗑","Delete phase"); dp.setOnClickListener(v->deletePhase(ph)); phaseActions.addView(dp); Button at=btn("＋ Add item"); at.setOnClickListener(v->editTopicDialog(ph,null)); phaseActions.addView(at,new LinearLayout.LayoutParams(0,-2,1)); list.addView(phaseActions);
             boolean expanded=ph.optBoolean("expanded",false); list.setVisibility(expanded?View.VISIBLE:View.GONE);
             phaseHead.setOnClickListener(v->{boolean show=list.getVisibility()!=View.VISIBLE;list.setVisibility(show?View.VISIBLE:View.GONE);try{ph.put("expanded",show);saveRoadmaps();}catch(Exception ignored){}});
             for(int j=0;j<topics.length();j++){JSONObject t=topics.optJSONObject(j);if(t!=null)addTopicRow(list,t,ph);}
@@ -371,44 +380,63 @@ public class MainActivity extends Activity {
         return out;
     }
     void addTopicRow(LinearLayout list,JSONObject t,JSONObject phase){
-        LinearLayout c=card(); c.setPadding(dp(10),dp(7),dp(8),dp(7));
+        LinearLayout c=card(); c.setPadding(dp(8),dp(5),dp(6),dp(5));
         String id=t.optString("id"); boolean done=completedFor(currentRoadmapId).contains(id);
         boolean saved=t.optBoolean("saved",false); boolean later=t.optBoolean("later",false);
+        boolean expanded=expandedTopics.contains(id);
 
         LinearLayout head=row(); head.setGravity(Gravity.CENTER_VERTICAL);
+        Button chevron=microIconBtn(expanded?"▾":"▸","Toggle details");
+        chevron.setOnClickListener(v->{if(expanded)expandedTopics.remove(id);else expandedTopics.add(id);showRoadmap();});
+        head.addView(chevron);
         CheckBox cb=new CheckBox(this); cb.setChecked(done); cb.setContentDescription("Mark done");
-        head.addView(cb,new LinearLayout.LayoutParams(dp(30),-2));
+        head.addView(cb,new LinearLayout.LayoutParams(dp(26),-2));
         TextView name=tv(t.optString("title"),14); name.setTypeface(null,1);
         name.setMaxLines(1); name.setEllipsize(android.text.TextUtils.TruncateAt.END);
         if(done)name.setTextColor(Color.parseColor("#7FE0A8"));
+        name.setOnClickListener(v->chevron.performClick());
         head.addView(name,new LinearLayout.LayoutParams(0,-2,1));
-
-        String primary=t.optString("url",""); JSONArray links=t.optJSONArray("links"); boolean hasLink=!primary.trim().isEmpty()||(links!=null&&links.length()>0);
-        if(hasLink){Button open=microIconBtn("🔗","Open resource");open.setOnClickListener(v->openTopicLinks(t));head.addView(open);}
-        Button save=microIconBtn(saved?"★":"☆","Save for later"); if(saved)save.setTextColor(Color.parseColor("#FFD166")); save.setOnClickListener(v->{try{t.put("saved",!t.optBoolean("saved",false));saveRoadmaps();showRoadmap();}catch(Exception ignored){}});head.addView(save);
-        Button laterBtn=microIconBtn("↺","Mark for later"); if(later)laterBtn.setTextColor(Color.parseColor("#4FD1FF")); laterBtn.setOnClickListener(v->{try{t.put("later",!t.optBoolean("later",false));saveRoadmaps();showRoadmap();}catch(Exception ignored){}});head.addView(laterBtn);
+        if(saved){TextView star=tv("★",12);star.setTextColor(Color.parseColor("#FFD166"));star.setPadding(dp(3),0,0,0);head.addView(star,new LinearLayout.LayoutParams(-2,-2));}
+        if(later){TextView lat=tv("↺",12);lat.setTextColor(Color.parseColor("#4FD1FF"));lat.setPadding(dp(3),0,0,0);head.addView(lat,new LinearLayout.LayoutParams(-2,-2));}
         Button track=microIconBtn("▶","Track time");track.setOnClickListener(v->startPersistentTimer(t.optString("title","Roadmap item"),"LEARNING",null,null));head.addView(track);
         Button more=microIconBtn("⋮","More options");more.setOnClickListener(v->topicOverflowMenu(phase,t));head.addView(more);
         c.addView(head);
 
-        StringBuilder meta=new StringBuilder();
-        String priority=t.optString("priority",""); if(!priority.isEmpty())meta.append(priority.toUpperCase(Locale.US));
-        if(t.optBoolean("interview",false)){if(meta.length()>0)meta.append(" · ");meta.append("INTERVIEW");}
-        String difficulty=t.optString("difficulty",""); if(!difficulty.isEmpty()){if(meta.length()>0)meta.append(" · ");meta.append(difficulty.toUpperCase(Locale.US));}
-        if(meta.length()>0){TextView m=tv(meta.toString(),11);m.setTextColor(Color.parseColor("#9AA4B8"));m.setPadding(dp(2),dp(2),dp(2),0);c.addView(m);}
-        JSONArray subs=t.optJSONArray("subtopics");
-        if(subs!=null&&subs.length()>0){TextView s=tv("Topics: "+joinJsonArray(subs),11);s.setTextColor(Color.parseColor("#9AA4B8"));s.setPadding(dp(2),0,dp(2),0);s.setMaxLines(2);s.setEllipsize(android.text.TextUtils.TruncateAt.END);c.addView(s);}
-        JSONArray tags=t.optJSONArray("tags");
-        if(tags!=null&&tags.length()>0){TextView tgv=tv("Tags: "+joinJsonArray(tags),11);tgv.setTextColor(Color.parseColor("#9AA4B8"));tgv.setPadding(dp(2),0,dp(2),0);tgv.setMaxLines(1);tgv.setEllipsize(android.text.TextUtils.TruncateAt.END);c.addView(tgv);}
+        if(expanded){
+            StringBuilder meta=new StringBuilder();
+            String priority=t.optString("priority",""); if(!priority.isEmpty())meta.append(priority.toUpperCase(Locale.US));
+            if(t.optBoolean("interview",false)){if(meta.length()>0)meta.append(" · ");meta.append("INTERVIEW");}
+            String difficulty=t.optString("difficulty",""); if(!difficulty.isEmpty()){if(meta.length()>0)meta.append(" · ");meta.append(difficulty.toUpperCase(Locale.US));}
+            LinearLayout details=new LinearLayout(this); details.setOrientation(LinearLayout.VERTICAL); details.setPadding(dp(32),dp(2),dp(4),dp(2));
+            if(meta.length()>0){TextView m=tv(meta.toString(),11);m.setTextColor(Color.parseColor("#9AA4B8"));details.addView(m);}
+            JSONArray subs=t.optJSONArray("subtopics");
+            if(subs!=null&&subs.length()>0){TextView s=tv("Topics: "+joinJsonArray(subs),11);s.setTextColor(Color.parseColor("#9AA4B8"));details.addView(s);}
+            JSONArray tags=t.optJSONArray("tags");
+            if(tags!=null&&tags.length()>0){TextView tgv=tv("Tags: "+joinJsonArray(tags),11);tgv.setTextColor(Color.parseColor("#9AA4B8"));details.addView(tgv);}
+            String primary=t.optString("url",""); JSONArray links=t.optJSONArray("links"); boolean hasLink=!primary.trim().isEmpty()||(links!=null&&links.length()>0);
+            if(hasLink){
+                TextView open=tv("🔗 Open resource",12); open.setTextColor(Color.parseColor("#4F8EF7")); open.setPadding(0,dp(4),0,0);
+                open.setOnClickListener(v->openTopicLinks(t)); details.addView(open);
+            }
+            if(meta.length()==0&&(subs==null||subs.length()==0)&&(tags==null||tags.length()==0)&&!hasLink){
+                TextView none=tv("No extra details for this item.",11); none.setTextColor(Color.parseColor("#5A6172")); details.addView(none);
+            }
+            c.addView(details);
+        }
 
         cb.setOnClickListener(v->{HashSet<String> set=completedFor(currentRoadmapId);if(cb.isChecked())set.add(id);else set.remove(id);saveCompletedFor(currentRoadmapId,set);showRoadmap();});
         list.addView(c);
     }
     void topicOverflowMenu(JSONObject phase,JSONObject t){
-        String[] opts={"✎ Edit","🗑 Delete","Cancel"};
+        boolean saved=t.optBoolean("saved",false); boolean later=t.optBoolean("later",false);
+        String[] opts={saved?"★ Remove from saved":"☆ Save for later",later?"↺ Remove from later":"↺ Mark for later","✎ Edit","🗑 Delete","Cancel"};
         new AlertDialog.Builder(this).setTitle(t.optString("title","Item")).setItems(opts,(d,w)->{
-            if(w==0)editTopicDialog(phase,t);
-            else if(w==1)deleteTopic(phase,t);
+            try{
+                if(w==0){t.put("saved",!saved);saveRoadmaps();showRoadmap();}
+                else if(w==1){t.put("later",!later);saveRoadmaps();showRoadmap();}
+                else if(w==2)editTopicDialog(phase,t);
+                else if(w==3)deleteTopic(phase,t);
+            }catch(Exception ignored){}
         }).show();
     }
     void openTopicLinks(JSONObject t){
@@ -423,7 +451,7 @@ public class MainActivity extends Activity {
     }
 
     void showPlan(){
-        page=2; base("Plan","Your schedule is the source of truth for today's planned activities.");
+        page=2; base("Plan","Your schedule is the source of truth for today's planned activities."); setNavSelected(R.id.navPlan);
         LinearLayout actions=card(); addText(actions,"DAILY SCHEDULE",19);
         Button imp=primaryBtn("📥 Import Daily Schedule JSON"); imp.setOnClickListener(v->importDailySchedule()); actions.addView(imp);
         Button exp=btn("📤 Export Daily Schedule JSON"); exp.setOnClickListener(v->exportDailySchedule()); actions.addView(exp);
@@ -472,7 +500,7 @@ public class MainActivity extends Activity {
     }
 
     void showProgress(){
-        page=3; base("Progress","Understand where your time goes and whether it moves you forward.");
+        page=3; base("Progress","Understand where your time goes and whether it moves you forward."); setNavSelected(R.id.navProgress);
         String today=date(); long todayMs=todaySessionMs(today)+activeElapsedMsForDate(today);
         LinearLayout day=card(); addText(day,"TODAY",11); addText(day,formatDuration(todayMs)+" tracked",28);
         addText(day,"Real sessions: "+realSessionCount(today),13); box().addView(day);

@@ -7,6 +7,6 @@
     <color name="muted">#9AA4B8</color>
     <color name="accent">#4F8EF7</color>
     <color name="accent_pressed">#3E78D8</color>
-    <color name="nav_selected">#7C5CFC</color>
-    <color name="nav_unselected">#9AA4B8</color>
+    <color name="nav_selected">#4F8EF7</color>
+    <color name="nav_unselected">#8890A0</color>
 </resources>
