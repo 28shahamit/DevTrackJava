@@ -48,17 +48,17 @@ public class MainActivity extends Activity {
     int dp(float v){ return (int)(v*getResources().getDisplayMetrics().density+.5f); }
     TextView tv(String text,float sp){
         TextView v=new TextView(this); v.setText(text); v.setTextSize(sp); v.setTextColor(Color.parseColor("#F4F6FB"));
-        v.setPadding(dp(3),dp(3),dp(3),dp(3)); return v;
+        v.setPadding(dp(4),dp(4),dp(4),dp(4)); return v;
     }
     Button btn(String text){
         Button b=new Button(this); b.setText(text); b.setTextColor(Color.parseColor("#F4F6FB"));
-        b.setAllCaps(false); b.setBackgroundResource(R.drawable.secondary_button_bg); b.setMinHeight(dp(36)); b.setPadding(dp(12),dp(6),dp(12),dp(6)); b.setTextSize(13); return b;
+        b.setAllCaps(false); b.setBackgroundResource(R.drawable.secondary_button_bg); b.setMinHeight(dp(40)); b.setPadding(dp(14),dp(7),dp(14),dp(7)); b.setTextSize(14); return b;
     }
     Button primaryBtn(String text){Button b=btn(text);b.setBackgroundResource(R.drawable.primary_button_bg);return b;}
     Button iconBtn(String icon,String description){
         Button b=btn(icon); b.setContentDescription(description);
-        b.setMinWidth(dp(36)); b.setMinimumWidth(dp(36));
-        b.setPadding(dp(5),dp(5),dp(5),dp(5)); return b;
+        b.setMinWidth(dp(40)); b.setMinimumWidth(dp(40));
+        b.setPadding(dp(6),dp(6),dp(6),dp(6)); return b;
     }
     Button dangerIconBtn(String icon,String description){
         Button b=iconBtn(icon,description); b.setTextColor(Color.parseColor("#FF6B6B")); return b;
@@ -67,10 +67,20 @@ public class MainActivity extends Activity {
     Button tinyIconBtn(String icon,String description){
         Button b=new Button(this); b.setText(icon); b.setTextColor(Color.parseColor("#C7CEDC"));
         b.setAllCaps(false); b.setBackgroundResource(R.drawable.secondary_button_bg);
-        b.setMinWidth(dp(34)); b.setMinHeight(dp(34));
-        b.setPadding(dp(3),dp(3),dp(3),dp(3)); b.setTextSize(13);
+        b.setMinWidth(dp(38)); b.setMinHeight(dp(38));
+        b.setPadding(dp(4),dp(4),dp(4),dp(4)); b.setTextSize(14);
         b.setContentDescription(description);
-        LinearLayout.LayoutParams lp=new LinearLayout.LayoutParams(-2,-2); lp.setMargins(0,0,dp(4),0); b.setLayoutParams(lp);
+        LinearLayout.LayoutParams lp=new LinearLayout.LayoutParams(-2,-2); lp.setMargins(0,0,dp(6),0); b.setLayoutParams(lp);
+        return b;
+    }
+    /** Smallest icon-only button — for packing several actions into a single heading row (e.g. a topic row). */
+    Button microIconBtn(String icon,String description){
+        Button b=new Button(this); b.setText(icon); b.setTextColor(Color.parseColor("#C7CEDC"));
+        b.setAllCaps(false); b.setBackgroundResource(R.drawable.secondary_button_bg);
+        b.setMinWidth(dp(28)); b.setMinHeight(dp(28));
+        b.setPadding(dp(2),dp(2),dp(2),dp(2)); b.setTextSize(12);
+        b.setContentDescription(description);
+        LinearLayout.LayoutParams lp=new LinearLayout.LayoutParams(-2,-2); lp.setMargins(dp(3),0,0,0); b.setLayoutParams(lp);
         return b;
     }
 
@@ -108,8 +118,8 @@ public class MainActivity extends Activity {
     }
     LinearLayout card(){
         LinearLayout l=new LinearLayout(this); l.setOrientation(LinearLayout.VERTICAL);
-        l.setPadding(dp(12),dp(9),dp(12),dp(9)); l.setBackgroundResource(R.drawable.card_bg);
-        LinearLayout.LayoutParams p=new LinearLayout.LayoutParams(-1,-2); p.setMargins(0,dp(4),0,dp(4)); l.setLayoutParams(p); return l;
+        l.setPadding(dp(14),dp(12),dp(14),dp(12)); l.setBackgroundResource(R.drawable.card_bg);
+        LinearLayout.LayoutParams p=new LinearLayout.LayoutParams(-1,-2); p.setMargins(0,dp(6),0,dp(6)); l.setLayoutParams(p); return l;
     }
     LinearLayout row(){ LinearLayout l=new LinearLayout(this); l.setOrientation(LinearLayout.HORIZONTAL); l.setGravity(Gravity.CENTER_VERTICAL); return l; }
     void addText(LinearLayout l,String s,float size){ l.addView(tv(s,size),new LinearLayout.LayoutParams(-1,-2)); }
@@ -361,68 +371,44 @@ public class MainActivity extends Activity {
         return out;
     }
     void addTopicRow(LinearLayout list,JSONObject t,JSONObject phase){
-        LinearLayout c=card(); c.setPadding(dp(10),dp(7),dp(10),dp(7));
+        LinearLayout c=card(); c.setPadding(dp(10),dp(7),dp(8),dp(7));
         String id=t.optString("id"); boolean done=completedFor(currentRoadmapId).contains(id);
         boolean saved=t.optBoolean("saved",false); boolean later=t.optBoolean("later",false);
 
-        LinearLayout head=row(); head.setGravity(Gravity.TOP|Gravity.CENTER_VERTICAL);
+        LinearLayout head=row(); head.setGravity(Gravity.CENTER_VERTICAL);
         CheckBox cb=new CheckBox(this); cb.setChecked(done); cb.setContentDescription("Mark done");
         head.addView(cb,new LinearLayout.LayoutParams(dp(30),-2));
         TextView name=tv(t.optString("title"),14); name.setTypeface(null,1);
+        name.setMaxLines(1); name.setEllipsize(android.text.TextUtils.TruncateAt.END);
         if(done)name.setTextColor(Color.parseColor("#7FE0A8"));
         head.addView(name,new LinearLayout.LayoutParams(0,-2,1));
-        if(saved){TextView star=tv("★",12);star.setTextColor(Color.parseColor("#FFD166"));star.setPadding(dp(3),dp(3),0,dp(3));head.addView(star,new LinearLayout.LayoutParams(-2,-2));}
-        if(later){TextView lat=tv("↺",12);lat.setTextColor(Color.parseColor("#4FD1FF"));lat.setPadding(dp(3),dp(3),0,dp(3));head.addView(lat,new LinearLayout.LayoutParams(-2,-2));}
+
+        String primary=t.optString("url",""); JSONArray links=t.optJSONArray("links"); boolean hasLink=!primary.trim().isEmpty()||(links!=null&&links.length()>0);
+        if(hasLink){Button open=microIconBtn("🔗","Open resource");open.setOnClickListener(v->openTopicLinks(t));head.addView(open);}
+        Button save=microIconBtn(saved?"★":"☆","Save for later"); if(saved)save.setTextColor(Color.parseColor("#FFD166")); save.setOnClickListener(v->{try{t.put("saved",!t.optBoolean("saved",false));saveRoadmaps();showRoadmap();}catch(Exception ignored){}});head.addView(save);
+        Button laterBtn=microIconBtn("↺","Mark for later"); if(later)laterBtn.setTextColor(Color.parseColor("#4FD1FF")); laterBtn.setOnClickListener(v->{try{t.put("later",!t.optBoolean("later",false));saveRoadmaps();showRoadmap();}catch(Exception ignored){}});head.addView(laterBtn);
+        Button track=microIconBtn("▶","Track time");track.setOnClickListener(v->startPersistentTimer(t.optString("title","Roadmap item"),"LEARNING",null,null));head.addView(track);
+        Button more=microIconBtn("⋮","More options");more.setOnClickListener(v->topicOverflowMenu(phase,t));head.addView(more);
         c.addView(head);
 
         StringBuilder meta=new StringBuilder();
         String priority=t.optString("priority",""); if(!priority.isEmpty())meta.append(priority.toUpperCase(Locale.US));
         if(t.optBoolean("interview",false)){if(meta.length()>0)meta.append(" · ");meta.append("INTERVIEW");}
         String difficulty=t.optString("difficulty",""); if(!difficulty.isEmpty()){if(meta.length()>0)meta.append(" · ");meta.append(difficulty.toUpperCase(Locale.US));}
-        if(meta.length()>0){TextView m=tv(meta.toString(),10);m.setTextColor(Color.parseColor("#9AA4B8"));m.setPadding(dp(3),0,dp(3),0);c.addView(m);}
+        if(meta.length()>0){TextView m=tv(meta.toString(),11);m.setTextColor(Color.parseColor("#9AA4B8"));m.setPadding(dp(2),dp(2),dp(2),0);c.addView(m);}
         JSONArray subs=t.optJSONArray("subtopics");
-        if(subs!=null&&subs.length()>0){TextView s=tv("Topics: "+joinJsonArray(subs),10);s.setTextColor(Color.parseColor("#9AA4B8"));s.setPadding(dp(3),0,dp(3),0);s.setMaxLines(1);s.setEllipsize(android.text.TextUtils.TruncateAt.END);c.addView(s);}
+        if(subs!=null&&subs.length()>0){TextView s=tv("Topics: "+joinJsonArray(subs),11);s.setTextColor(Color.parseColor("#9AA4B8"));s.setPadding(dp(2),0,dp(2),0);s.setMaxLines(2);s.setEllipsize(android.text.TextUtils.TruncateAt.END);c.addView(s);}
         JSONArray tags=t.optJSONArray("tags");
-        if(tags!=null&&tags.length()>0){TextView tgv=tv("Tags: "+joinJsonArray(tags),10);tgv.setTextColor(Color.parseColor("#9AA4B8"));tgv.setPadding(dp(3),0,dp(3),0);tgv.setMaxLines(1);tgv.setEllipsize(android.text.TextUtils.TruncateAt.END);c.addView(tgv);}
-
-        // Keep the DEFAULT row to just the two most-used actions (Save, Track)
-        // plus More — three comfortable, evenly-sized buttons instead of five
-        // squeezed ones. Open/Later move into the ⋮ overflow menu below; this
-        // also keeps each topic card shorter, so scanning through the full
-        // 300+ topic roadmap stays fast.
-        LinearLayout actions=row(); actions.setPadding(0,dp(5),0,0);
-        String primary=t.optString("url",""); JSONArray links=t.optJSONArray("links"); boolean hasLink=!primary.trim().isEmpty()||(links!=null&&links.length()>0);
-        ArrayList<Button> actionBtns=new ArrayList<>();
-        Button save=tinyIconBtn(saved?"★":"☆","Save for later"); if(saved)save.setTextColor(Color.parseColor("#FFD166")); save.setOnClickListener(v->{try{t.put("saved",!t.optBoolean("saved",false));saveRoadmaps();showRoadmap();}catch(Exception ignored){}});actionBtns.add(save);
-        Button track=tinyIconBtn("▶","Track time");track.setOnClickListener(v->startPersistentTimer(t.optString("title","Roadmap item"),"LEARNING",null,null));actionBtns.add(track);
-        Button more=tinyIconBtn("⋮","More options");more.setOnClickListener(v->topicOverflowMenu(phase,t));actionBtns.add(more);
-        for(Button b:actionBtns){
-            b.setMinWidth(0); b.setMinimumWidth(0); // let weight control width instead of a fixed minimum
-            LinearLayout.LayoutParams lp=new LinearLayout.LayoutParams(0,dp(34),1); lp.setMargins(0,0,dp(4),0); b.setLayoutParams(lp);
-            actions.addView(b);
-        }
-        c.addView(actions);
+        if(tags!=null&&tags.length()>0){TextView tgv=tv("Tags: "+joinJsonArray(tags),11);tgv.setTextColor(Color.parseColor("#9AA4B8"));tgv.setPadding(dp(2),0,dp(2),0);tgv.setMaxLines(1);tgv.setEllipsize(android.text.TextUtils.TruncateAt.END);c.addView(tgv);}
 
         cb.setOnClickListener(v->{HashSet<String> set=completedFor(currentRoadmapId);if(cb.isChecked())set.add(id);else set.remove(id);saveCompletedFor(currentRoadmapId,set);showRoadmap();});
         list.addView(c);
     }
     void topicOverflowMenu(JSONObject phase,JSONObject t){
-        String primary=t.optString("url",""); JSONArray links=t.optJSONArray("links");
-        boolean hasLink=!primary.trim().isEmpty()||(links!=null&&links.length()>0);
-        boolean later=t.optBoolean("later",false);
-        ArrayList<String> optList=new ArrayList<>();
-        if(hasLink)optList.add("🔗 Open resource");
-        optList.add(later?"↺ Unmark \"later\"":"↺ Mark for later");
-        optList.add("✎ Edit");
-        optList.add("🗑 Delete");
-        optList.add("Cancel");
-        String[] opts=optList.toArray(new String[0]);
+        String[] opts={"✎ Edit","🗑 Delete","Cancel"};
         new AlertDialog.Builder(this).setTitle(t.optString("title","Item")).setItems(opts,(d,w)->{
-            String choice=opts[w];
-            if(choice.startsWith("🔗"))openTopicLinks(t);
-            else if(choice.startsWith("↺")){try{t.put("later",!later);saveRoadmaps();showRoadmap();}catch(Exception ignored){}}
-            else if(choice.startsWith("✎"))editTopicDialog(phase,t);
-            else if(choice.startsWith("🗑"))deleteTopic(phase,t);
+            if(w==0)editTopicDialog(phase,t);
+            else if(w==1)deleteTopic(phase,t);
         }).show();
     }
     void openTopicLinks(JSONObject t){
@@ -550,26 +536,25 @@ public class MainActivity extends Activity {
             }).setNegativeButton("Cancel",null).show();
     }
 
-    LinearLayout categoryRowView(String cat,View convert){
-        LinearLayout row; TextView label;
-        if(convert instanceof LinearLayout && convert.getTag()instanceof TextView){row=(LinearLayout)convert;label=(TextView)convert.getTag();}
+    LinearLayout dotAdapterRow(String label,int color,View convert){
+        LinearLayout row; TextView lbl;
+        if(convert instanceof LinearLayout && convert.getTag()instanceof TextView){row=(LinearLayout)convert;lbl=(TextView)convert.getTag();}
         else{
             row=new LinearLayout(this); row.setOrientation(LinearLayout.HORIZONTAL); row.setGravity(Gravity.CENTER_VERTICAL);
             row.setPadding(dp(12),dp(10),dp(12),dp(10));
             View d=dot(Color.WHITE,10); LinearLayout.LayoutParams dp2=new LinearLayout.LayoutParams(dp(10),dp(10)); dp2.setMargins(0,0,dp(8),0); row.addView(d,dp2);
-            label=new TextView(this); label.setTextColor(Color.parseColor("#F4F6FB")); label.setTextSize(14); row.addView(label);
-            row.setTag(label);
+            lbl=new TextView(this); lbl.setTextColor(Color.parseColor("#F4F6FB")); lbl.setTextSize(14); row.addView(lbl);
+            row.setTag(lbl);
         }
-        ((View)row.getChildAt(0)).setBackgroundColor(0); // reset, will re-tint below
-        android.graphics.drawable.GradientDrawable gd=new android.graphics.drawable.GradientDrawable(); gd.setShape(android.graphics.drawable.GradientDrawable.OVAL); gd.setColor(categoryColor(cat));
+        android.graphics.drawable.GradientDrawable gd=new android.graphics.drawable.GradientDrawable(); gd.setShape(android.graphics.drawable.GradientDrawable.OVAL); gd.setColor(color);
         row.getChildAt(0).setBackground(gd);
-        label.setText(cat);
+        lbl.setText(label);
         return row;
     }
     ArrayAdapter<String> categoryAdapter(){
         return new ArrayAdapter<String>(this,android.R.layout.simple_spinner_item,CATEGORY_NAMES){
-            @Override public View getView(int position,View convertView,android.view.ViewGroup parent){LinearLayout v=categoryRowView(getItem(position),convertView);v.setBackgroundColor(Color.parseColor("#1B202B"));return v;}
-            @Override public View getDropDownView(int position,View convertView,android.view.ViewGroup parent){LinearLayout v=categoryRowView(getItem(position),convertView);v.setBackgroundColor(Color.parseColor("#1B1F2A"));return v;}
+            @Override public View getView(int position,View convertView,android.view.ViewGroup parent){LinearLayout v=dotAdapterRow(getItem(position),categoryColor(getItem(position)),convertView);v.setBackgroundColor(Color.parseColor("#1B202B"));return v;}
+            @Override public View getDropDownView(int position,View convertView,android.view.ViewGroup parent){LinearLayout v=dotAdapterRow(getItem(position),categoryColor(getItem(position)),convertView);v.setBackgroundColor(Color.parseColor("#1B1F2A"));return v;}
         };
     }
 
@@ -578,65 +563,56 @@ public class MainActivity extends Activity {
         for(int i=0;i<CATEGORY_NAMES.length;i++)if(CATEGORY_NAMES[i].equals(selected)){sp.setSelection(i);break;} return sp;
     }
 
+    static final String[] PRIORITY_LEVELS={"LOW","MEDIUM","HIGH","CRITICAL"};
+    static final String[] DIFFICULTY_LEVELS={"UNSET","EASY","MEDIUM","HARD"};
+    int priorityColor(String p){
+        if(p==null)p="MEDIUM";
+        switch(p.toUpperCase(Locale.US)){
+            case "LOW": return Color.parseColor("#6EE7B7");
+            case "HIGH": return Color.parseColor("#FFB84F");
+            case "CRITICAL": return Color.parseColor("#FF6B6B");
+            default: return Color.parseColor("#4FD1FF");
+        }
+    }
+    int difficultyColor(String d){
+        if(d==null)d="";
+        switch(d.toUpperCase(Locale.US)){
+            case "EASY": return Color.parseColor("#6EE7B7");
+            case "HARD": return Color.parseColor("#FF6B6B");
+            case "MEDIUM": return Color.parseColor("#FFD166");
+            default: return Color.parseColor("#5A6172");
+        }
+    }
+    Spinner prioritySpinner(String selected){
+        Spinner sp=new Spinner(this);
+        ArrayAdapter<String> ad=new ArrayAdapter<String>(this,android.R.layout.simple_spinner_item,PRIORITY_LEVELS){
+            @Override public View getView(int p,View cv,android.view.ViewGroup pr){LinearLayout v=dotAdapterRow(getItem(p),priorityColor(getItem(p)),cv);v.setBackgroundColor(Color.parseColor("#1B202B"));return v;}
+            @Override public View getDropDownView(int p,View cv,android.view.ViewGroup pr){LinearLayout v=dotAdapterRow(getItem(p),priorityColor(getItem(p)),cv);v.setBackgroundColor(Color.parseColor("#1B1F2A"));return v;}
+        };
+        sp.setAdapter(ad);
+        String sel=(selected==null||selected.trim().isEmpty())?"MEDIUM":selected.trim().toUpperCase(Locale.US);
+        int idx=1; for(int i=0;i<PRIORITY_LEVELS.length;i++)if(PRIORITY_LEVELS[i].equals(sel)){idx=i;break;}
+        sp.setSelection(idx); return sp;
+    }
+    Spinner difficultySpinner(String selected){
+        Spinner sp=new Spinner(this);
+        ArrayAdapter<String> ad=new ArrayAdapter<String>(this,android.R.layout.simple_spinner_item,DIFFICULTY_LEVELS){
+            @Override public View getView(int p,View cv,android.view.ViewGroup pr){LinearLayout v=dotAdapterRow(getItem(p),difficultyColor("UNSET".equals(getItem(p))?"":getItem(p)),cv);v.setBackgroundColor(Color.parseColor("#1B202B"));return v;}
+            @Override public View getDropDownView(int p,View cv,android.view.ViewGroup pr){LinearLayout v=dotAdapterRow(getItem(p),difficultyColor("UNSET".equals(getItem(p))?"":getItem(p)),cv);v.setBackgroundColor(Color.parseColor("#1B1F2A"));return v;}
+        };
+        sp.setAdapter(ad);
+        String sel=(selected==null||selected.trim().isEmpty())?"UNSET":selected.trim().toUpperCase(Locale.US);
+        int idx=0; for(int i=0;i<DIFFICULTY_LEVELS.length;i++)if(DIFFICULTY_LEVELS[i].equals(sel)){idx=i;break;}
+        sp.setSelection(idx); return sp;
+    }
+
     void activityLogDialog(){
-        LinearLayout l=new LinearLayout(this);l.setOrientation(LinearLayout.VERTICAL);l.setPadding(dp(16),dp(8),dp(16),dp(8));
+        LinearLayout l=new LinearLayout(this);l.setOrientation(LinearLayout.VERTICAL);l.setPadding(dp(8),0,dp(8),0);
         addText(l,"Add a completed activity that happened earlier. For live tracking use Start / Stop.",12);
-
-        addText(l,"Activity",11);
-        EditText titleE=new EditText(this);titleE.setHint("e.g. Java Streams practice");l.addView(titleE);
-        TextView titleErr=tv("",11); titleErr.setTextColor(Color.parseColor("#FF6B6B")); titleErr.setVisibility(View.GONE); l.addView(titleErr);
-
-        addText(l,"Date",11);
-        EditText dateE=datePickerField("Date",date()); l.addView(dateE);
-
-        addText(l,"Duration",11);
-        LinearLayout durRow=row();
-        EditText hoursE=new EditText(this); hoursE.setHint("Hours"); hoursE.setInputType(2); hoursE.setText("0");
-        EditText minsE=new EditText(this); minsE.setHint("Minutes"); minsE.setInputType(2); minsE.setText("30");
-        durRow.addView(hoursE,new LinearLayout.LayoutParams(0,-2,1));
-        addSpace(durRow,12);
-        durRow.addView(minsE,new LinearLayout.LayoutParams(0,-2,1));
-        l.addView(durRow);
-        TextView durErr=tv("",11); durErr.setTextColor(Color.parseColor("#FF6B6B")); durErr.setVisibility(View.GONE); l.addView(durErr);
-        addText(l,"Quick durations — tap to fill in",10);
-        l.addView(durationChipsRow(hoursE,minsE));
-
-        addText(l,"Category",11);
+        EditText titleE=new EditText(this);titleE.setHint("Activity");l.addView(titleE);
+        EditText durE=new EditText(this);durE.setHint("Duration in minutes");durE.setInputType(2);l.addView(durE);
         Spinner cat=categorySpinner("OTHER");l.addView(cat);
-
-        ScrollView scroll=new ScrollView(this); scroll.addView(l);
-        AlertDialog dialog=new AlertDialog.Builder(this).setTitle("Log past activity").setView(scroll)
-            .setPositiveButton("Save",(d,w)->{}) // overridden below to control dismissal
-            .setNegativeButton("Cancel",null).create();
-        dialog.setOnShowListener(dd->{
-            Button saveBtn=dialog.getButton(AlertDialog.BUTTON_POSITIVE);
-            saveBtn.setOnClickListener(v->{
-                titleErr.setVisibility(View.GONE); durErr.setVisibility(View.GONE);
-                String titleVal=titleE.getText().toString().trim();
-                boolean valid=true;
-                if(titleVal.isEmpty()){titleErr.setText("Activity name is required");titleErr.setVisibility(View.VISIBLE);valid=false;}
-                int h=0,m=0;
-                try{String hs=hoursE.getText().toString().trim();h=hs.isEmpty()?0:Integer.parseInt(hs);}catch(Exception ignored){}
-                try{String ms=minsE.getText().toString().trim();m=ms.isEmpty()?0:Integer.parseInt(ms);}catch(Exception ignored){}
-                int totalMin=h*60+m;
-                if(totalMin<=0){durErr.setText("Enter a duration greater than 0 (use the fields or a quick chip above)");durErr.setVisibility(View.VISIBLE);valid=false;}
-                String dateVal=dateE.getText().toString().trim(); if(dateVal.isEmpty())dateVal=date();
-                if(!valid)return;
-                try{
-                    JSONObject s=new JSONObject();
-                    s.put("id",UUID.randomUUID().toString());
-                    s.put("title",titleVal);
-                    s.put("category",String.valueOf(cat.getSelectedItem()));
-                    s.put("date",dateVal);
-                    s.put("durationMs",totalMin*60000L);
-                    s.put("createdAt",dateTime());
-                    sessions.put(s); saveState(); dialog.dismiss();
-                    toast("Logged "+formatDuration(totalMin*60000L)+" · "+titleVal);
-                    showHome();
-                }catch(Exception e){toast("Could not log activity: "+safeMessage(e));}
-            });
-        });
-        dialog.show();
+        new AlertDialog.Builder(this).setTitle("Log past activity").setView(l).setPositiveButton("Save",(d,w)->{try{int min=Math.max(1,Integer.parseInt(durE.getText().toString().trim()));JSONObject s=new JSONObject();s.put("id",UUID.randomUUID().toString());s.put("title",titleE.getText().toString().trim());s.put("category",String.valueOf(cat.getSelectedItem()));s.put("date",date());s.put("durationMs",min*60000L);s.put("createdAt",dateTime());sessions.put(s);saveState();showHome();}catch(Exception e){toast("Could not log activity: "+safeMessage(e));}}).setNegativeButton("Cancel",null).show();
     }
 
     void manualStartDialog(){
@@ -756,18 +732,43 @@ public class MainActivity extends Activity {
     }
     void editPhaseDialog(JSONObject ph){LinearLayout l=new LinearLayout(this);l.setOrientation(LinearLayout.VERTICAL);EditText name=new EditText(this);name.setHint("Phase title");name.setText(ph.optString("title"));l.addView(name);EditText duration=new EditText(this);duration.setHint("Duration");duration.setText(ph.optString("duration"));l.addView(duration);new AlertDialog.Builder(this).setTitle("Edit phase").setView(l).setPositiveButton("Save",(d,w)->{try{ph.put("title",name.getText().toString().trim());ph.put("duration",duration.getText().toString().trim());saveRoadmaps();showRoadmap();}catch(Exception e){toast("Could not edit phase");}}).setNegativeButton("Cancel",null).show();}
     void editTopicDialog(JSONObject ph,JSONObject existing){
-        LinearLayout l=new LinearLayout(this);l.setOrientation(LinearLayout.VERTICAL);l.setPadding(dp(8),0,dp(8),0);
-        EditText name=new EditText(this);name.setHint("Title / question");name.setText(existing==null?"":existing.optString("title"));l.addView(name);
-        EditText priority=new EditText(this);priority.setHint("Priority: low / medium / high");priority.setText(existing==null?"medium":existing.optString("priority","medium"));l.addView(priority);
-        EditText difficulty=new EditText(this);difficulty.setHint("Difficulty: EASY / MEDIUM / HARD");difficulty.setText(existing==null?"":existing.optString("difficulty"));l.addView(difficulty);
-        CheckBox interview=new CheckBox(this);interview.setText("Interview item");interview.setTextColor(Color.parseColor("#F4F6FB"));interview.setChecked(existing!=null&&existing.optBoolean("interview",false));l.addView(interview);
-        EditText subs=new EditText(this);subs.setHint("Subtopics, comma separated");subs.setText(existing==null?"":joinJsonArray(existing.optJSONArray("subtopics")));l.addView(subs);
-        EditText tags=new EditText(this);tags.setHint("Tags, comma separated");tags.setText(existing==null?"":joinJsonArray(existing.optJSONArray("tags")));l.addView(tags);
-        EditText url=new EditText(this);url.setHint("Primary coding/resource URL");url.setInputType(android.text.InputType.TYPE_CLASS_TEXT|android.text.InputType.TYPE_TEXT_VARIATION_URI);url.setText(existing==null?"":existing.optString("url",""));l.addView(url);
-        EditText links=new EditText(this);links.setHint("Extra links: Title | https://... (one per line)");links.setMinLines(2);links.setText(existing==null?"":linksToText(existing.optJSONArray("links")));l.addView(links);
-        new AlertDialog.Builder(this).setTitle(existing==null?"Add roadmap item":"Edit roadmap item").setView(l).setPositiveButton("Save",(d,w)->{try{
+        LinearLayout l=new LinearLayout(this);l.setOrientation(LinearLayout.VERTICAL);l.setPadding(dp(16),dp(8),dp(16),dp(8));
+
+        addText(l,"Title / question",11);
+        EditText name=new EditText(this);name.setHint("e.g. Lambda Expressions");name.setText(existing==null?"":existing.optString("title"));l.addView(name);
+
+        LinearLayout row1=row();
+        LinearLayout pCol=new LinearLayout(this);pCol.setOrientation(LinearLayout.VERTICAL);
+        addText(pCol,"Priority",11); Spinner priority=prioritySpinner(existing==null?"MEDIUM":existing.optString("priority","MEDIUM")); pCol.addView(priority);
+        row1.addView(pCol,new LinearLayout.LayoutParams(0,-2,1));
+        addSpace(row1,12);
+        LinearLayout dCol=new LinearLayout(this);dCol.setOrientation(LinearLayout.VERTICAL);
+        addText(dCol,"Difficulty",11); Spinner difficulty=difficultySpinner(existing==null?"":existing.optString("difficulty","")); dCol.addView(difficulty);
+        row1.addView(dCol,new LinearLayout.LayoutParams(0,-2,1));
+        l.addView(row1);
+
+        CheckBox interview=new CheckBox(this);interview.setText("Interview item");interview.setTextColor(Color.parseColor("#F4F6FB"));interview.setChecked(existing!=null&&existing.optBoolean("interview",false));
+        LinearLayout.LayoutParams ip=new LinearLayout.LayoutParams(-2,-2); ip.topMargin=dp(6); interview.setLayoutParams(ip); l.addView(interview);
+
+        addText(l,"Subtopics",11);
+        EditText subs=new EditText(this);subs.setHint("Comma separated, e.g. filter, map, reduce");subs.setText(existing==null?"":joinJsonArray(existing.optJSONArray("subtopics")));l.addView(subs);
+
+        addText(l,"Tags",11);
+        EditText tags=new EditText(this);tags.setHint("Comma separated");tags.setText(existing==null?"":joinJsonArray(existing.optJSONArray("tags")));l.addView(tags);
+
+        addText(l,"Primary resource link",11);
+        EditText url=new EditText(this);url.setHint("https://...");url.setInputType(android.text.InputType.TYPE_CLASS_TEXT|android.text.InputType.TYPE_TEXT_VARIATION_URI);url.setText(existing==null?"":existing.optString("url",""));l.addView(url);
+
+        addText(l,"Extra links (one per line: Title | https://...)",11);
+        EditText links=new EditText(this);links.setHint("Docs | https://...");links.setMinLines(2);links.setText(existing==null?"":linksToText(existing.optJSONArray("links")));l.addView(links);
+
+        ScrollView scroll=new ScrollView(this); scroll.addView(l);
+        new AlertDialog.Builder(this).setTitle(existing==null?"Add roadmap item":"Edit roadmap item").setView(scroll).setPositiveButton("Save",(d,w)->{try{
             JSONObject t=existing==null?new JSONObject():existing;if(existing==null){t.put("id",UUID.randomUUID().toString());JSONArray ts=ph.optJSONArray("topics");if(ts==null){ts=new JSONArray();ph.put("topics",ts);}ts.put(t);}
-            t.put("title",name.getText().toString().trim());t.put("priority",priority.getText().toString().trim());t.put("difficulty",difficulty.getText().toString().trim().toUpperCase(Locale.US));t.put("interview",interview.isChecked());
+            t.put("title",name.getText().toString().trim());
+            t.put("priority",String.valueOf(priority.getSelectedItem()));
+            String diff=String.valueOf(difficulty.getSelectedItem()); if("UNSET".equals(diff))t.remove("difficulty"); else t.put("difficulty",diff);
+            t.put("interview",interview.isChecked());
             String raw=subs.getText().toString().trim();JSONArray a=new JSONArray();if(!raw.isEmpty())for(String x:raw.split(","))if(!x.trim().isEmpty())a.put(x.trim());if(a.length()>0)t.put("subtopics",a);else t.remove("subtopics");
             String tagRaw=tags.getText().toString().trim();JSONArray tagArray=new JSONArray();if(!tagRaw.isEmpty())for(String x:tagRaw.split(","))if(!x.trim().isEmpty())tagArray.put(x.trim());if(tagArray.length()>0)t.put("tags",tagArray);else t.remove("tags");
             String primary=url.getText().toString().trim();if(primary.isEmpty())t.remove("url");else t.put("url",primary);
@@ -875,42 +876,6 @@ public class MainActivity extends Activity {
             new TimePickerDialog(this,(view,hh,mm)->e.setText(String.format(Locale.US,"%02d:%02d",hh,mm)),h,m,true).show();
         });
         return e;
-    }
-
-    /** A read-only EditText that opens a native DatePickerDialog when tapped. Stores value as yyyy-MM-dd. */
-    EditText datePickerField(String hint,String initialYMD){
-        EditText e=new EditText(this); e.setHint(hint); e.setText(initialYMD==null||initialYMD.trim().isEmpty()?date():initialYMD);
-        e.setFocusable(false); e.setClickable(true); e.setCursorVisible(false);
-        e.setOnClickListener(v->{
-            Calendar c=Calendar.getInstance();
-            String cur=e.getText().toString().trim();
-            if(cur.matches("^\\d{4}-\\d{2}-\\d{2}$")){
-                try{c.setTime(new SimpleDateFormat("yyyy-MM-dd",Locale.US).parse(cur));}catch(Exception ignored){}
-            }
-            new DatePickerDialog(this,(view,y,mo,d)->e.setText(String.format(Locale.US,"%04d-%02d-%02d",y,mo+1,d)),
-                c.get(Calendar.YEAR),c.get(Calendar.MONTH),c.get(Calendar.DAY_OF_MONTH)).show();
-        });
-        return e;
-    }
-
-    /** Tap-to-fill duration presets. Tapping a chip sets both the hours and minutes fields. */
-    LinearLayout durationChipsRow(EditText hoursE,EditText minsE){
-        LinearLayout r=new LinearLayout(this); r.setOrientation(LinearLayout.HORIZONTAL); r.setPadding(0,dp(4),0,dp(6));
-        HorizontalScrollView sc=new HorizontalScrollView(this); sc.setHorizontalScrollBarEnabled(false);
-        LinearLayout inner=new LinearLayout(this); inner.setOrientation(LinearLayout.HORIZONTAL);
-        int[][] presets={{0,15},{0,30},{0,45},{1,0},{1,30},{2,0},{3,0}};
-        for(int[] p:presets){
-            String label=p[0]>0?(p[1]>0?p[0]+"h "+p[1]+"m":p[0]+"h"):p[1]+"m";
-            TextView chip=tv(label,12); chip.setGravity(Gravity.CENTER); chip.setPadding(dp(14),dp(8),dp(14),dp(8));
-            android.graphics.drawable.GradientDrawable gd=new android.graphics.drawable.GradientDrawable();
-            gd.setCornerRadius(dp(8)); gd.setColor(Color.parseColor("#1B202B")); gd.setStroke(dp(1),Color.parseColor("#303746"));
-            chip.setBackground(gd); chip.setTextColor(Color.parseColor("#C7CEDC"));
-            LinearLayout.LayoutParams lp=new LinearLayout.LayoutParams(-2,dp(36)); lp.setMargins(0,0,dp(8),0); chip.setLayoutParams(lp);
-            chip.setOnClickListener(v->{hoursE.setText(String.valueOf(p[0]));minsE.setText(String.valueOf(p[1]));});
-            inner.addView(chip);
-        }
-        sc.addView(inner); r.addView(sc,new LinearLayout.LayoutParams(-1,-2));
-        return r;
     }
 
     /** Toggleable day-of-week chips. Returns the container; selected days are tracked in `selected`. */

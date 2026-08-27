@@ -20,7 +20,7 @@
     <LinearLayout
         android:id="@+id/nav"
         android:layout_width="match_parent"
-        android:layout_height="60dp"
+        android:layout_height="68dp"
         android:orientation="horizontal"
         android:gravity="center"
         android:padding="6dp"
