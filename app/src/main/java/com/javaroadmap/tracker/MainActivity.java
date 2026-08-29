@@ -274,12 +274,23 @@ public class MainActivity extends Activity {
         addTrackingCard(box());
 
         LinearLayout quick=card(); addText(quick,"Quick actions",18);
-        Button plan=btn("✓ Open today's plan"); plan.setOnClickListener(v->showPlan()); quick.addView(plan);
         Button log=btn("＋ Log past activity"); log.setOnClickListener(v->activityLogDialog()); quick.addView(log);
-        Button start=btn("▶ Start manual activity"); start.setOnClickListener(v->manualStartDialog()); quick.addView(start);
         box().addView(quick);
     }
 
+    /** Slim "a timer is running" notice for screens other than Home, so users aren't surprised
+     *  a timer is active without duplicating the full Start/Stop controls here. */
+    void addActiveTimerBanner(LinearLayout parent){
+        JSONObject active=getActiveTimer(); if(active==null)return;
+        LinearLayout c=card();
+        LinearLayout r=row();
+        LinearLayout mid=new LinearLayout(this); mid.setOrientation(LinearLayout.VERTICAL);
+        TextView running=tv("🔴 Timer running",12); running.setTextColor(Color.parseColor("#FF6B6B")); mid.addView(running);
+        addText(mid,active.optString("title","Activity"),16);
+        r.addView(mid,new LinearLayout.LayoutParams(0,-2,1));
+        Button view=btn("View"); view.setContentDescription("View running timer on Home"); view.setOnClickListener(v->showHome()); r.addView(view);
+        c.addView(r); parent.addView(c);
+    }
     void addTrackingCard(LinearLayout parent){
         LinearLayout c=card(); addText(c,"TIME TRACKING",11); JSONObject active=getActiveTimer();
         if(active!=null){
@@ -353,7 +364,6 @@ public class MainActivity extends Activity {
         Button exp=btn("📤 Export Current Roadmap JSON"); exp.setOnClickListener(v->exportRoadmap()); actions.addView(exp);
         Button dsa=btn("🧠 Add included DSA starter"); dsa.setOnClickListener(v->importBundledRoadmap("dsa-roadmap.json")); actions.addView(dsa);
         box().addView(actions);
-        LinearLayout sessionsCard=card(); addText(sessionsCard,"Recent Study Sessions",20); ArrayList<JSONObject> recent=recentSessionObjects(30); int from=Math.max(0,recent.size()-8); for(int i=recent.size()-1;i>=from;i--)addText(sessionsCard,sessionLine(recent.get(i)),13); if(recent.isEmpty())addText(sessionsCard,"No saved sessions yet.",13); box().addView(sessionsCard);
     }
     void addRoadmapCard(LinearLayout parent,JSONObject r){
         String id=r.optString("id",roadmapId(r)); int total=topicCount(r); int done=completedFor(id).size(); int pct=total==0?0:Math.round(done*100f/total);
@@ -485,7 +495,7 @@ public class MainActivity extends Activity {
         Button exp=btn("📤 Export Daily Schedule JSON"); exp.setOnClickListener(v->exportDailySchedule()); actions.addView(exp);
         Button addBlock=btn("＋ Add schedule block"); addBlock.setOnClickListener(v->scheduleBlockDialog(null,-1)); actions.addView(addBlock);
         box().addView(actions);
-        addTrackingCard(box());
+        addActiveTimerBanner(box());
 
         String today=date(); LinearLayout timeline=card(); addText(timeline,"Today · "+today,20);
         ArrayList<JSONObject> blocks=todaysScheduleBlocks(today);
@@ -538,6 +548,12 @@ public class MainActivity extends Activity {
         if(roadmaps!=null&&roadmaps.length()>0){
             for(int i=0;i<roadmaps.length();i++){JSONObject r=roadmaps.optJSONObject(i);if(r==null)continue;int total=topicCount(r);int done=completedFor(r.optString("id",roadmapId(r))).size();int pct=total==0?0:Math.round(done*100f/total);addText(road,r.optString("icon","📚")+"  "+roadmapName(r)+"   "+done+" / "+total+" "+roadmapItemLabel(r)+" · "+pct+"%",14);ProgressBar rb=new ProgressBar(this,null,android.R.attr.progressBarStyleHorizontal);rb.setMax(100);rb.setProgress(pct);road.addView(rb,new LinearLayout.LayoutParams(-1,dp(6)));}
         } else addText(road,"No roadmaps imported.",13); box().addView(road);
+
+        LinearLayout sessionsCard=card(); addText(sessionsCard,"RECENT STUDY SESSIONS",18);
+        ArrayList<JSONObject> recent=recentSessionObjects(30); int from=Math.max(0,recent.size()-10);
+        for(int i=recent.size()-1;i>=from;i--)addText(sessionsCard,sessionLine(recent.get(i)),13);
+        if(recent.isEmpty())addText(sessionsCard,"No saved sessions yet.",13);
+        box().addView(sessionsCard);
 
         long learning=0,project=0,work=0,distraction=0,other=0;
         for(JSONObject x:sessionObjectsForDate(today)){long m=x.optLong("durationMs",0);String c=x.optString("category","OTHER");if("LEARNING".equals(c)||"CAREER".equals(c))learning+=m;else if("PROJECT".equals(c))project+=m;else if("WORK".equals(c))work+=m;else if("DISTRACTION".equals(c))distraction+=m;else other+=m;}
@@ -775,12 +791,31 @@ public class MainActivity extends Activity {
     void startScheduleBlock(JSONObject b){
         if(b==null)return; if(getActiveTimer()!=null){toast("Stop the current timer first.");return;}
         if(isPlanCompletedForDate(b.optString("id"),date())){toast("This planned activity is already complete.");return;}
-        startPersistentTimer(b.optString("title","Planned activity"),b.optString("category","OTHER"),null,b.optString("id"));
+        startPersistentTimer(b.optString("title","Planned activity"),b.optString("category","OTHER"),null,b.optString("id"),b.optString("start",""));
     }
 
-    void startPersistentTimer(String title,String category,String taskId,String scheduleId){
-        try{JSONObject a=new JSONObject();a.put("id",UUID.randomUUID().toString());a.put("title",title);a.put("category",category);a.put("taskId",taskId==null?"":taskId);a.put("scheduleId",scheduleId==null?"":scheduleId);a.put("startAt",System.currentTimeMillis());a.put("date",date());a.put("completed",false);saveActiveTimer(a);toast("Timer started");showHome();}
-        catch(Exception e){toast("Could not start timer: "+safeMessage(e));}
+    void startPersistentTimer(String title,String category,String taskId,String scheduleId){ startPersistentTimer(title,category,taskId,scheduleId,""); }
+    /** plannedStart: "HH:mm" the block was scheduled for, or "" if this activity has no fixed schedule (manual/task). */
+    void startPersistentTimer(String title,String category,String taskId,String scheduleId,String plannedStart){
+        try{
+            JSONObject a=new JSONObject();a.put("id",UUID.randomUUID().toString());a.put("title",title);a.put("category",category);a.put("taskId",taskId==null?"":taskId);a.put("scheduleId",scheduleId==null?"":scheduleId);a.put("startAt",System.currentTimeMillis());a.put("date",date());a.put("completed",false);
+            if(plannedStart!=null&&!plannedStart.isEmpty()){
+                a.put("plannedStart",plannedStart);
+                int plannedMin=toMinutes(plannedStart);
+                if(plannedMin>=0){
+                    Calendar now=Calendar.getInstance();
+                    int actualMin=now.get(Calendar.HOUR_OF_DAY)*60+now.get(Calendar.MINUTE);
+                    a.put("adherenceMin",actualMin-plannedMin);
+                }
+            }
+            saveActiveTimer(a);toast("Timer started");showHome();
+        }catch(Exception e){toast("Could not start timer: "+safeMessage(e));}
+    }
+    /** Human label for how a tracked session compared to its scheduled start time. */
+    String adherenceLabel(int diffMin){
+        if(diffMin<=-6)return "Started "+Math.abs(diffMin)+" min early";
+        if(diffMin>=6)return "Started "+diffMin+" min late";
+        return "Started on time";
     }
 
     JSONObject getActiveTimer(){
@@ -799,7 +834,9 @@ public class MainActivity extends Activity {
         long end=System.currentTimeMillis();long duration=Math.max(0,end-a.optLong("startAt",end));
         if(duration<1000){clearActiveTimer();saveState();toast("No measurable time was recorded.");showHome();return;}
         try{
-            JSONObject session=new JSONObject();session.put("id",UUID.randomUUID().toString());session.put("title",a.optString("title"));session.put("category",a.optString("category","OTHER"));session.put("date",a.optString("date",date()));session.put("durationMs",duration);session.put("startAt",a.optLong("startAt",end));session.put("endAt",end);session.put("createdAt",dateTime());session.put("taskId",a.optString("taskId",""));session.put("scheduleId",a.optString("scheduleId",""));session.put("completed",complete);sessions.put(session);
+            JSONObject session=new JSONObject();session.put("id",UUID.randomUUID().toString());session.put("title",a.optString("title"));session.put("category",a.optString("category","OTHER"));session.put("date",a.optString("date",date()));session.put("durationMs",duration);session.put("startAt",a.optLong("startAt",end));session.put("endAt",end);session.put("createdAt",dateTime());session.put("taskId",a.optString("taskId",""));session.put("scheduleId",a.optString("scheduleId",""));session.put("completed",complete);
+            if(a.has("plannedStart")){session.put("plannedStart",a.optString("plannedStart"));session.put("adherenceMin",a.optInt("adherenceMin",0));}
+            sessions.put(session);
             String taskId=a.optString("taskId","");if(!taskId.isEmpty()){JSONObject task=findTask(taskId);if(task!=null){int min=Math.max(1,(int)Math.round(duration/60000f));task.put("actualMin",task.optInt("actualMin",0)+min);task.put("remainingMin",Math.max(0,task.optInt("remainingMin",task.optInt("estimateMin",min))-min));if(complete){task.put("status","completed");task.put("remainingMin",0);task.put("completedAt",dateTime());}else task.put("status","in_progress");}}
             String scheduleId=a.optString("scheduleId","");if(complete&&!scheduleId.isEmpty())markPlanCompleted(scheduleId,a.optString("date",date()));
             clearActiveTimer();saveState();toast("Saved "+formatDurationSmart(duration));showHome();
@@ -983,7 +1020,11 @@ public class MainActivity extends Activity {
         return total;
     }
     String formatDurationSmart(long ms){if(ms<60000)return Math.max(1,ms/1000)+"s";return formatDuration(ms);}
-    String sessionLine(JSONObject s){return s.optString("date")+" · "+s.optString("title")+" · "+formatDurationSmart(s.optLong("durationMs",0));}
+    String sessionLine(JSONObject s){
+        String line=s.optString("date")+" · "+s.optString("title")+" · "+formatDurationSmart(s.optLong("durationMs",0));
+        if(s.has("plannedStart"))line+=" · "+adherenceLabel(s.optInt("adherenceMin",0));
+        return line;
+    }
 
     String date(){return new SimpleDateFormat("yyyy-MM-dd",Locale.US).format(new Date());}
     String dateTime(){return new SimpleDateFormat("yyyy-MM-dd HH:mm:ss",Locale.US).format(new Date());}
