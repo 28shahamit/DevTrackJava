@@ -225,13 +225,29 @@ public class MainActivity extends Activity {
         int[] all={R.id.navHome,R.id.navLearn,R.id.navPlan,R.id.navProgress};
         for(int navId:all){View v=findViewById(navId);if(v!=null)v.setSelected(navId==id);}
     }
+    /** Rebuilds the heading + scrollable body for a top-level screen. Reuses the existing
+     *  ScrollView/body instance when one is already mounted (instead of tearing the whole
+     *  content tree down and rebuilding it from scratch) so switching screens or refreshing
+     *  in place doesn't flash an empty frame before the new content is measured. */
     void base(String heading,String sub){
-        content.removeAllViews();
-        ScrollView sc=new ScrollView(this); sc.setFillViewport(true);
-        LinearLayout box=new LinearLayout(this); box.setOrientation(LinearLayout.VERTICAL); box.setPadding(dp(16),dp(24),dp(16),dp(20));
-        title=tv(heading,28); title.setTypeface(null,1); box.addView(title);
+        LinearLayout box;
+        if(content.getChildCount()>0 && content.getChildAt(0) instanceof ScrollView){
+            ScrollView sc=(ScrollView)content.getChildAt(0);
+            box=(LinearLayout)sc.getChildAt(0);
+            box.removeAllViews();
+        } else {
+            content.removeAllViews();
+            ScrollView sc=new ScrollView(this); sc.setFillViewport(true);
+            box=new LinearLayout(this); box.setOrientation(LinearLayout.VERTICAL); box.setPadding(dp(16),dp(24),dp(16),dp(20));
+            sc.addView(box); content.addView(sc);
+        }
+        LinearLayout headRow=row(); headRow.setGravity(Gravity.CENTER_VERTICAL);
+        title=tv(heading,28); title.setTypeface(null,1);
+        headRow.addView(title,new LinearLayout.LayoutParams(0,-2,1));
+        Button gear=microIconBtn("⚙","Settings"); gear.setOnClickListener(v->showSettings());
+        headRow.addView(gear);
+        box.addView(headRow);
         if(sub!=null){ TextView s=tv(sub,13); s.setTextColor(Color.parseColor("#9AA4B8")); box.addView(s); }
-        sc.addView(box); content.addView(sc);
         content.setTag(box);
     }
     void baseWithBack(String heading,String sub,Runnable backAction){
@@ -563,24 +579,43 @@ public class MainActivity extends Activity {
         LinearLayout dist=card(); addText(dist,"TIME DISTRIBUTION",18); addText(dist,"Learning / Career    "+formatDuration(learning),14); addText(dist,"Projects             "+formatDuration(project),14); addText(dist,"Work                 "+formatDuration(work),14); addText(dist,"Distraction           "+formatDuration(distraction),14); addText(dist,"Other / neutral       "+formatDuration(other),14); box().addView(dist);
 
         LinearLayout week=card(); addText(week,"THIS WEEK",18); long ms=0;int count=0;for(JSONObject x:recentSessionObjects(7)){ms+=x.optLong("durationMs",0);count++;}addText(week,"Tracked: "+formatDuration(ms),22);addText(week,"Sessions: "+count,13);box().addView(week);
+    }
 
-        LinearLayout settings=card(); addText(settings,"TRACKING SETTINGS",18); addText(settings,"Automatic mode follows today's schedule. Manual mode lets you choose every activity.",12);
+    /** Tracking mode, alarms, and data import/export/reset — pulled out of the Progress tab
+     *  (where it didn't belong alongside your stats) into its own screen, reachable from the
+     *  ⚙ icon on every top-level tab. Returns to whichever tab you opened it from. */
+    void showSettings(){
+        int from=page;
+        baseWithBack("Settings","Tracking mode, alarms, and data management.",()->{
+            switch(from){case 1:showLearn();break;case 2:showPlan();break;case 3:showProgress();break;default:showHome();}
+        });
+        setNavSelected(-1);
+        LinearLayout root=box();
+
+        LinearLayout settings=card(); addText(settings,"TRACKING MODE",18); addText(settings,"Automatic mode follows today's schedule. Manual mode lets you choose every activity.",12);
         RadioGroup rg=new RadioGroup(this); rg.setOrientation(RadioGroup.VERTICAL);
         RadioButton auto=new RadioButton(this);auto.setText("Automatic from Plan");auto.setTextColor(Color.parseColor("#F4F6FB"));auto.setId(View.generateViewId());
         RadioButton manual=new RadioButton(this);manual.setText("Manual");manual.setTextColor(Color.parseColor("#F4F6FB"));manual.setId(View.generateViewId());rg.addView(auto);rg.addView(manual);auto.setChecked(!isManualMode());manual.setChecked(isManualMode());
-        rg.setOnCheckedChangeListener((g,id)->{boolean manualSelected=id==manual.getId();getSharedPreferences(PREFS,0).edit().putBoolean(KEY_TRACKING_MODE,manualSelected).apply();showProgress();});settings.addView(rg);
+        rg.setOnCheckedChangeListener((g,id)->{boolean manualSelected=id==manual.getId();getSharedPreferences(PREFS,0).edit().putBoolean(KEY_TRACKING_MODE,manualSelected).apply();showSettings();});settings.addView(rg);
         Button manualStart=btn("▶ Start manual activity");manualStart.setOnClickListener(v->manualStartDialog());settings.addView(manualStart);
-        Button alarm=btn("🔔 Test alarm");alarm.setOnClickListener(v->NotificationHelper.showTest(this));settings.addView(alarm);
+        root.addView(settings);
+
+        LinearLayout alarms=card(); addText(alarms,"ALARMS",18);
+        Button alarm=btn("🔔 Test alarm");alarm.setOnClickListener(v->NotificationHelper.showTest(this));alarms.addView(alarm);
         if(Build.VERSION.SDK_INT>=31){
             AlarmManager amCheck=(AlarmManager)getSystemService(Context.ALARM_SERVICE);
             boolean exact=amCheck!=null&&amCheck.canScheduleExactAlarms();
-            addText(settings,exact?"Exact alarms: allowed":"Exact alarms: not allowed — reminders may fire late.",11);
-            if(!exact){Button exactBtn=btn("Allow exact alarms");exactBtn.setOnClickListener(v->{try{startActivity(new Intent(Settings.ACTION_REQUEST_SCHEDULE_EXACT_ALARM,Uri.parse("package:"+getPackageName())));}catch(Exception e){toast("Could not open alarm settings");}});settings.addView(exactBtn);}
+            addText(alarms,exact?"Exact alarms: allowed":"Exact alarms: not allowed — reminders may fire late.",11);
+            if(!exact){Button exactBtn=btn("Allow exact alarms");exactBtn.setOnClickListener(v->{try{startActivity(new Intent(Settings.ACTION_REQUEST_SCHEDULE_EXACT_ALARM,Uri.parse("package:"+getPackageName())));}catch(Exception e){toast("Could not open alarm settings");}});alarms.addView(exactBtn);}
         }
-        Button impS=btn("📥 Import daily schedule");impS.setOnClickListener(v->importDailySchedule());settings.addView(impS);
-        Button imp=btn("📥 Import full backup");imp.setOnClickListener(v->importBackup());settings.addView(imp);
-        Button exp=btn("📤 Export full backup");exp.setOnClickListener(v->exportBackup());settings.addView(exp);
-        Button reset=btn("Reset all data");reset.setOnClickListener(v->confirmReset());settings.addView(reset);box().addView(settings);
+        root.addView(alarms);
+
+        LinearLayout data=card(); addText(data,"DATA",18);
+        Button impS=btn("📥 Import daily schedule");impS.setOnClickListener(v->importDailySchedule());data.addView(impS);
+        Button imp=btn("📥 Import full backup");imp.setOnClickListener(v->importBackup());data.addView(imp);
+        Button exp=btn("📤 Export full backup");exp.setOnClickListener(v->exportBackup());data.addView(exp);
+        Button reset=btn("Reset all data");reset.setOnClickListener(v->confirmReset());data.addView(reset);
+        root.addView(data);
     }
 
     /** CR-001: redesigned Add Task dialog — explicit labels, logical grouping, native date/time
@@ -1070,17 +1105,35 @@ public class MainActivity extends Activity {
         c.addView(daysRow); parent.addView(c);
     }
     Date parseIso(String iso){try{return new SimpleDateFormat("yyyy-MM-dd",Locale.US).parse(iso);}catch(Exception e){return new Date();}}
+    /** Shows a day's tracked activities as proper rows (title, category, duration, session
+     *  count, and a completed check) instead of one long plain-text block — easier to scan,
+     *  and consistent with how activities look everywhere else in the app. */
     void showDayDetailDialog(String day){
         ArrayList<JSONObject> groups=aggregateSessions(day);
         long total=todaySessionMs(day);
-        StringBuilder sb=new StringBuilder(); sb.append(formatDuration(total)).append(" tracked\n");
-        if(groups.isEmpty())sb.append("\nNo activities tracked this day.");
-        else for(JSONObject g:groups){
-            sb.append("\n").append(g.optString("title")).append("\n");
-            sb.append(g.optString("category","OTHER")).append(" · ").append(formatDurationSmart(g.optLong("durationMs",0)));
-            int cnt=g.optInt("sessionCount",0); sb.append(" · ").append(cnt).append(cnt==1?" session":" sessions");
+
+        LinearLayout l=new LinearLayout(this); l.setOrientation(LinearLayout.VERTICAL); l.setPadding(dp(16),dp(4),dp(16),dp(4));
+        addText(l,formatDuration(total)+" tracked",22);
+        addSpace(l,10);
+
+        if(groups.isEmpty()){
+            addText(l,"No activities tracked this day.",13);
+        } else {
+            for(JSONObject g:groups){
+                LinearLayout r=row(); r.setGravity(Gravity.TOP|Gravity.CENTER_VERTICAL); r.setMinimumHeight(0); r.setPadding(0,dp(6),0,dp(6));
+                LinearLayout mid=new LinearLayout(this); mid.setOrientation(LinearLayout.VERTICAL); mid.setMinimumHeight(0);
+                TextView titleTv=tv(g.optString("title","Activity"),15); titleTv.setTypeface(null,1); mid.addView(titleTv);
+                int cnt=g.optInt("sessionCount",0);
+                String sub=g.optString("category","OTHER")+" · "+formatDurationSmart(g.optLong("durationMs",0))+" · "+cnt+(cnt==1?" session":" sessions");
+                TextView subTv=tv(sub,12); subTv.setTextColor(Color.parseColor("#9AA4B8")); mid.addView(subTv);
+                r.addView(mid,new LinearLayout.LayoutParams(0,-2,1));
+                if(g.optBoolean("completed",false)){TextView check=tv("✓",16); check.setTextColor(Color.parseColor("#34C77B")); check.setGravity(Gravity.CENTER); r.addView(check,new LinearLayout.LayoutParams(dp(28),-2));}
+                l.addView(r);
+                View divider=new View(this); divider.setBackgroundColor(Color.parseColor("#22283A")); l.addView(divider,new LinearLayout.LayoutParams(-1,dp(1)));
+            }
         }
-        dlg().setTitle(displayDate(day)).setMessage(sb.toString().trim()).setPositiveButton("Close",null).show();
+        ScrollView sc=new ScrollView(this); sc.addView(l);
+        dlg().setTitle(displayDate(day)).setView(sc).setPositiveButton("Close",null).show();
     }
     ArrayList<JSONObject> aggregateSessions(String day){
         LinkedHashMap<String,JSONObject> map=new LinkedHashMap<>();
@@ -1089,7 +1142,23 @@ public class MainActivity extends Activity {
             JSONObject g=map.get(key);if(g==null){g=new JSONObject();try{g.put("key",key);g.put("title",s.optString("title"));g.put("category",s.optString("category","OTHER"));g.put("durationMs",0);g.put("sessionCount",0);g.put("taskId",s.optString("taskId",""));g.put("scheduleId",s.optString("scheduleId",""));g.put("completed",false);g.put("resumable",false);map.put(key,g);}catch(Exception ignored){}}
             try{g.put("durationMs",g.optLong("durationMs",0)+s.optLong("durationMs",0));g.put("sessionCount",g.optInt("sessionCount",0)+1);if(!s.optBoolean("completed",false)){g.put("resumable",true);g.put("completed",false);g.put("lastSession",s);}else if(!g.optBoolean("resumable",false)){g.put("completed",true);}}catch(Exception ignored){}
         }
-        ArrayList<JSONObject> out=new ArrayList<>(map.values());for(JSONObject g:out){try{String sid=g.optString("scheduleId","");if(!sid.isEmpty()&&isPlanCompletedForDate(sid,day)){g.put("completed",true);g.put("resumable",false);}}catch(Exception ignored){}}return out;
+        ArrayList<JSONObject> out=new ArrayList<>(map.values());
+        for(JSONObject g:out){
+            try{
+                String sid=g.optString("scheduleId","");
+                if(!sid.isEmpty()&&isPlanCompletedForDate(sid,day)){g.put("completed",true);g.put("resumable",false);continue;}
+                // A task can be marked complete (e.g. via its checkbox) even though one of its
+                // earlier, now-irrelevant timer sessions was never itself flagged "completed".
+                // Without this check that stray session flag kept the group "resumable" and
+                // showed a Resume button on an activity that's already done.
+                String tid=g.optString("taskId","");
+                if(!tid.isEmpty()){
+                    JSONObject task=findTask(tid);
+                    if(task!=null&&"completed".equals(task.optString("status"))){g.put("completed",true);g.put("resumable",false);}
+                }
+            }catch(Exception ignored){}
+        }
+        return out;
     }
     boolean hasOpenSessionForSchedule(JSONObject b){String id=b.optString("id","");if(id.isEmpty())return false;for(JSONObject s:sessionObjectsForDate(date()))if(id.equals(s.optString("scheduleId"))&&!s.optBoolean("completed",false))return true;return false;}
 
