@@ -1,0 +1,13 @@
+<resources>
+    <style name="NavButton" parent="@android:style/Widget.Material.Button.Borderless">
+        <item name="android:layout_width">0dp</item>
+        <item name="android:layout_height">match_parent</item>
+        <item name="android:layout_weight">1</item>
+        <item name="android:textColor">@color/nav_item_tint</item>
+        <item name="android:textSize">11sp</item>
+        <item name="android:minHeight">0dp</item>
+        <item name="android:paddingLeft">2dp</item>
+        <item name="android:paddingRight">2dp</item>
+        <item name="android:background">@drawable/nav_button_bg</item>
+    </style>
+</resources>
