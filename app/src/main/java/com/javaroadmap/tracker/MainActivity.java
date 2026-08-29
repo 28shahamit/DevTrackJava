@@ -34,6 +34,7 @@ public class MainActivity extends Activity {
     JSONArray tasks, sessions, schedules;
     HashSet<String> completed=new HashSet<>();
     HashSet<String> expandedTopics=new HashSet<>();
+    HashSet<String> expandedSessionGroups=new HashSet<>();
     TextView title;
     int page=0;
     String startupError;
@@ -544,15 +545,17 @@ public class MainActivity extends Activity {
         LinearLayout day=card(); addText(day,"TODAY",11); addText(day,formatDuration(todayMs)+" tracked",28);
         addText(day,"Real sessions: "+realSessionCount(today),13); box().addView(day);
 
+        addStreakCard(box());
+
         LinearLayout road=card(); addText(road,"ROADMAP PROGRESS",18);
         if(roadmaps!=null&&roadmaps.length()>0){
             for(int i=0;i<roadmaps.length();i++){JSONObject r=roadmaps.optJSONObject(i);if(r==null)continue;int total=topicCount(r);int done=completedFor(r.optString("id",roadmapId(r))).size();int pct=total==0?0:Math.round(done*100f/total);addText(road,r.optString("icon","📚")+"  "+roadmapName(r)+"   "+done+" / "+total+" "+roadmapItemLabel(r)+" · "+pct+"%",14);ProgressBar rb=new ProgressBar(this,null,android.R.attr.progressBarStyleHorizontal);rb.setMax(100);rb.setProgress(pct);road.addView(rb,new LinearLayout.LayoutParams(-1,dp(6)));}
         } else addText(road,"No roadmaps imported.",13); box().addView(road);
 
         LinearLayout sessionsCard=card(); addText(sessionsCard,"RECENT STUDY SESSIONS",18);
-        ArrayList<JSONObject> recent=recentSessionObjects(30); int from=Math.max(0,recent.size()-10);
-        for(int i=recent.size()-1;i>=from;i--)addText(sessionsCard,sessionLine(recent.get(i)),13);
-        if(recent.isEmpty())addText(sessionsCard,"No saved sessions yet.",13);
+        ArrayList<JSONObject> groups=groupedRecentSessions(30); int shown=Math.min(10,groups.size());
+        for(int i=0;i<shown;i++)addSessionGroupRow(sessionsCard,groups.get(i));
+        if(groups.isEmpty())addText(sessionsCard,"No saved sessions yet.",13);
         box().addView(sessionsCard);
 
         long learning=0,project=0,work=0,distraction=0,other=0;
@@ -813,9 +816,9 @@ public class MainActivity extends Activity {
     }
     /** Human label for how a tracked session compared to its scheduled start time. */
     String adherenceLabel(int diffMin){
-        if(diffMin<=-6)return "Started "+Math.abs(diffMin)+" min early";
-        if(diffMin>=6)return "Started "+diffMin+" min late";
-        return "Started on time";
+        if(diffMin<=-6)return formatMin(Math.abs(diffMin))+" early";
+        if(diffMin>=6)return formatMin(diffMin)+" late";
+        return "On time";
     }
 
     JSONObject getActiveTimer(){
@@ -962,6 +965,123 @@ public class MainActivity extends Activity {
     ArrayList<JSONObject> sessionObjectsForDate(String d){ArrayList<JSONObject> out=new ArrayList<>();for(int i=0;i<sessions.length();i++){JSONObject s=sessions.optJSONObject(i);if(s==null||!d.equals(s.optString("date"))||s.optLong("durationMs",0)<=0)continue;out.add(s);}return out;}
     ArrayList<JSONObject> recentSessionObjects(int days){ArrayList<JSONObject> out=new ArrayList<>();for(int i=0;i<sessions.length();i++){JSONObject s=sessions.optJSONObject(i);if(s==null||s.optLong("durationMs",0)<=0)continue;if(withinDaysInclusive(s.optString("date"),days))out.add(s);}return out;}
     boolean withinDaysInclusive(String d,int days){try{SimpleDateFormat f=new SimpleDateFormat("yyyy-MM-dd",Locale.US);Date x=f.parse(d), now=f.parse(date());long diff=(now.getTime()-x.getTime())/86400000L;return diff>=0&&diff<days;}catch(Exception e){return false;}}
+    /** Groups recent sessions by day + activity, so repeat sessions of the same task (e.g. three short
+     *  "Wake Up & Freshen Up" runs on one day) collapse into a single row with a combined total,
+     *  rather than showing as separate near-duplicate lines. Newest group first. */
+    ArrayList<JSONObject> groupedRecentSessions(int days){
+        LinkedHashMap<String,JSONObject> map=new LinkedHashMap<>();
+        for(JSONObject s:recentSessionObjects(days)){
+            String day=s.optString("date");
+            String key=day+"|"+(!s.optString("scheduleId","").isEmpty()?s.optString("scheduleId"):(!s.optString("taskId","").isEmpty()?s.optString("taskId"):s.optString("title","")+"|"+s.optString("category","OTHER")));
+            JSONObject g=map.get(key);
+            try{
+                if(g==null){
+                    g=new JSONObject();
+                    g.put("date",day); g.put("title",s.optString("title")); g.put("category",s.optString("category","OTHER"));
+                    g.put("durationMs",0L); g.put("sessionCount",0); g.put("sessions",new JSONArray());
+                    if(s.has("plannedStart")){g.put("plannedStart",s.optString("plannedStart"));}
+                    map.put(key,g);
+                }
+                g.put("durationMs",g.optLong("durationMs",0)+s.optLong("durationMs",0));
+                g.put("sessionCount",g.optInt("sessionCount",0)+1);
+                g.optJSONArray("sessions").put(s);
+            }catch(Exception ignored){}
+        }
+        ArrayList<JSONObject> out=new ArrayList<>(map.values());
+        Collections.reverse(out);
+        return out;
+    }
+    /** Rebuilds Progress in place, keeping scroll position (used when expanding a session row). */
+    void refreshProgress(){ int y=currentScrollY(); showProgress(); restoreScrollY(y); }
+    void addSessionGroupRow(LinearLayout list,JSONObject g){
+        LinearLayout c=card(); c.setPadding(dp(8),dp(5),dp(6),dp(5));
+        String key=g.optString("date")+"|"+g.optString("title")+"|"+g.optString("category");
+        boolean expanded=expandedSessionGroups.contains(key);
+
+        LinearLayout head=row();
+        Button chevron=microIconBtn(expanded?"▾":"▸","Toggle session details");
+        chevron.setOnClickListener(v->{if(expanded)expandedSessionGroups.remove(key);else expandedSessionGroups.add(key);refreshProgress();});
+        head.addView(chevron);
+        LinearLayout mid=new LinearLayout(this); mid.setOrientation(LinearLayout.VERTICAL); mid.setPadding(dp(6),0,0,0);
+        TextView titleTv=tv(g.optString("title","Activity"),15); titleTv.setTypeface(null,1); mid.addView(titleTv);
+        JSONArray sess=g.optJSONArray("sessions");
+        JSONObject first=sess!=null&&sess.length()>0?sess.optJSONObject(0):null;
+
+        StringBuilder line2=new StringBuilder();
+        if(first!=null){
+            if(g.has("plannedStart"))line2.append("Planned ").append(clockLabel(g.optString("plannedStart"))).append(" · ");
+            line2.append("Started ").append(clockLabel(first.optLong("startAt",0)));
+        }
+        if(line2.length()>0){TextView l2=tv(line2.toString(),12); l2.setTextColor(Color.parseColor("#9AA4B8")); mid.addView(l2);}
+
+        StringBuilder line3=new StringBuilder();
+        if(first!=null&&first.has("plannedStart"))line3.append(adherenceLabel(first.optInt("adherenceMin",0))).append(" · ");
+        line3.append(formatDurationSmart(g.optLong("durationMs",0))).append(" tracked");
+        int count=g.optInt("sessionCount",1);
+        if(count>1)line3.append(" · ").append(count).append(" sessions");
+        TextView l3=tv(line3.toString(),12); l3.setTextColor(Color.parseColor("#9AA4B8")); mid.addView(l3);
+
+        head.addView(mid,new LinearLayout.LayoutParams(0,-2,1));
+        head.setOnClickListener(v->chevron.performClick());
+        c.addView(head);
+
+        if(expanded&&sess!=null){
+            LinearLayout details=new LinearLayout(this); details.setOrientation(LinearLayout.VERTICAL); details.setPadding(dp(32),dp(4),dp(4),dp(2));
+            for(int i=0;i<sess.length();i++){
+                JSONObject s=sess.optJSONObject(i); if(s==null)continue;
+                StringBuilder d=new StringBuilder();
+                d.append(clockLabel(s.optLong("startAt",0))).append(" – ").append(clockLabel(s.optLong("endAt",s.optLong("startAt",0))));
+                d.append(" · ").append(formatDurationSmart(s.optLong("durationMs",0)));
+                if(s.optBoolean("completed",false))d.append(" · ✓ Completed");
+                TextView dv=tv(d.toString(),11); dv.setTextColor(Color.parseColor("#7A8296")); details.addView(dv);
+            }
+            c.addView(details);
+        }
+        list.addView(c);
+    }
+    /** Consecutive days (ending today, or yesterday if nothing tracked yet today) with any tracked time. */
+    int currentStreak(){
+        String d=date(); if(todaySessionMs(d)<=0)d=shiftDate(d,-1);
+        int streak=0; int guard=0;
+        while(todaySessionMs(d)>0&&guard<3650){streak++; d=shiftDate(d,-1); guard++;}
+        return streak;
+    }
+    void addStreakCard(LinearLayout parent){
+        LinearLayout c=card(); addText(c,"STREAK",11);
+        int streak=currentStreak();
+        addText(c,streak+(streak==1?" day":" days"),28);
+        addText(c,streak==0?"Track something today to start a streak.":"Keep it going — tap a day for details.",12);
+        LinearLayout daysRow=new LinearLayout(this); daysRow.setOrientation(LinearLayout.HORIZONTAL); daysRow.setPadding(0,dp(8),0,0);
+        int show=14;
+        for(int i=show-1;i>=0;i--){
+            String d=shiftDate(date(),-i);
+            boolean active=todaySessionMs(d)>0;
+            boolean isToday=i==0;
+            TextView chip=tv(new SimpleDateFormat("d",Locale.US).format(parseIso(d)),11);
+            chip.setGravity(Gravity.CENTER); chip.setContentDescription(displayDate(d)+(active?", tracked":", no activity")+", tap for details");
+            LinearLayout.LayoutParams lp=new LinearLayout.LayoutParams(0,dp(32),1); lp.setMargins(dp(2),0,dp(2),0);
+            android.graphics.drawable.GradientDrawable gd=new android.graphics.drawable.GradientDrawable();
+            gd.setCornerRadius(dp(7)); gd.setColor(Color.parseColor(active?"#34C77B":"#1B202B"));
+            if(isToday)gd.setStroke(dp(2),Color.parseColor("#4F8EF7"));
+            chip.setBackground(gd); chip.setTextColor(Color.parseColor(active?"#0B0F17":"#9AA4B8")); chip.setLayoutParams(lp);
+            chip.setOnClickListener(v->showDayDetailDialog(d));
+            daysRow.addView(chip);
+        }
+        c.addView(daysRow); parent.addView(c);
+    }
+    Date parseIso(String iso){try{return new SimpleDateFormat("yyyy-MM-dd",Locale.US).parse(iso);}catch(Exception e){return new Date();}}
+    void showDayDetailDialog(String day){
+        ArrayList<JSONObject> groups=aggregateSessions(day);
+        long total=todaySessionMs(day);
+        StringBuilder sb=new StringBuilder(); sb.append(formatDuration(total)).append(" tracked\n");
+        if(groups.isEmpty())sb.append("\nNo activities tracked this day.");
+        else for(JSONObject g:groups){
+            sb.append("\n").append(g.optString("title")).append("\n");
+            sb.append(g.optString("category","OTHER")).append(" · ").append(formatDurationSmart(g.optLong("durationMs",0)));
+            int cnt=g.optInt("sessionCount",0); sb.append(" · ").append(cnt).append(cnt==1?" session":" sessions");
+        }
+        dlg().setTitle(displayDate(day)).setMessage(sb.toString().trim()).setPositiveButton("Close",null).show();
+    }
     ArrayList<JSONObject> aggregateSessions(String day){
         LinkedHashMap<String,JSONObject> map=new LinkedHashMap<>();
         for(JSONObject s:sessionObjectsForDate(day)){
@@ -1124,6 +1244,13 @@ public class MainActivity extends Activity {
         try{return new SimpleDateFormat("d MMM yyyy",Locale.US).format(new SimpleDateFormat("yyyy-MM-dd",Locale.US).parse(iso));}
         catch(Exception e){return iso==null?"":iso;}
     }
+    /** "HH:mm" -> "10:00 AM" */
+    String clockLabel(String hhmm){
+        try{return new SimpleDateFormat("h:mm a",Locale.US).format(new SimpleDateFormat("HH:mm",Locale.US).parse(hhmm));}
+        catch(Exception e){return hhmm==null?"":hhmm;}
+    }
+    /** epoch millis -> "2:28 AM" */
+    String clockLabel(long millis){return new SimpleDateFormat("h:mm a",Locale.US).format(new Date(millis));}
 
     /** Toggleable day-of-week chips. Returns the container; selected days are tracked in `selected`. */
     LinearLayout dayChipsRow(boolean[] selected){
