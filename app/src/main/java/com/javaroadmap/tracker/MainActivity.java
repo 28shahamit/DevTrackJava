@@ -47,6 +47,7 @@ public class MainActivity extends Activity {
     static final String KEY_ACTIVE_TIMER="activeTimer";
     static final String KEY_TRACKING_MODE="trackingMode";
     static final String KEY_COMPLETED_PLANS="completedPlans";
+    static final String KEY_DAILY_GOAL_MIN="dailyGoalMin";
 
     int dp(float v){ return (int)(v*getResources().getDisplayMetrics().density+.5f); }
     TextView tv(String text,float sp){
@@ -565,7 +566,9 @@ public class MainActivity extends Activity {
         addText(day,"Real sessions: "+realSessionCount(today),13); box().addView(day);
 
         addStreakCard(box());
+        addDailyGoalCard(box());
         addProductivityCard(box());
+        addAchievementsCard(box());
 
         LinearLayout road=card(); addText(road,"ROADMAP PROGRESS",18);
         if(roadmaps!=null&&roadmaps.length()>0){
@@ -603,6 +606,20 @@ public class MainActivity extends Activity {
         rg.setOnCheckedChangeListener((g,id)->{boolean manualSelected=id==manual.getId();getSharedPreferences(PREFS,0).edit().putBoolean(KEY_TRACKING_MODE,manualSelected).apply();showSettings();});settings.addView(rg);
         Button manualStart=btn("▶ Start manual activity");manualStart.setOnClickListener(v->manualStartDialog());settings.addView(manualStart);
         root.addView(settings);
+
+        LinearLayout goalCard=card(); addText(goalCard,"DAILY GOAL",18); addText(goalCard,"Set a daily focus-time target. Progress shows it as a bar, and streak days that hit it turn gold.",12);
+        int currentGoal=getSharedPreferences(PREFS,0).getInt(KEY_DAILY_GOAL_MIN,0);
+        EditText goalInput=new EditText(this); goalInput.setInputType(android.text.InputType.TYPE_CLASS_NUMBER);
+        goalInput.setHint("Minutes per day, e.g. 60"); if(currentGoal>0)goalInput.setText(String.valueOf(currentGoal));
+        goalCard.addView(goalInput);
+        Button saveGoal=btn("Save goal"); saveGoal.setOnClickListener(v->{
+            String txt=goalInput.getText().toString().trim(); int val;
+            try{val=txt.isEmpty()?0:Integer.parseInt(txt);}catch(Exception e){toast("Enter a valid number of minutes");return;}
+            if(val<0){toast("Enter a valid number of minutes");return;}
+            getSharedPreferences(PREFS,0).edit().putInt(KEY_DAILY_GOAL_MIN,val).apply();
+            toast(val>0?"Daily goal set to "+val+" min":"Daily goal cleared"); showSettings();
+        }); goalCard.addView(saveGoal);
+        root.addView(goalCard);
 
         LinearLayout alarms=card(); addText(alarms,"ALARMS",18);
         Button alarm=btn("🔔 Test alarm");alarm.setOnClickListener(v->NotificationHelper.showTest(this));alarms.addView(alarm);
@@ -1236,23 +1253,95 @@ public class MainActivity extends Activity {
         int streak=currentStreak();
         addText(c,streak+(streak==1?" day":" days"),28);
         addText(c,streak==0?"Track something today to start a streak.":"Keep it going — tap a day for details.",12);
+        int goalMin=getSharedPreferences(PREFS,0).getInt(KEY_DAILY_GOAL_MIN,0);
         LinearLayout daysRow=new LinearLayout(this); daysRow.setOrientation(LinearLayout.HORIZONTAL); daysRow.setPadding(0,dp(8),0,0);
         int show=14;
         for(int i=show-1;i>=0;i--){
             String d=shiftDate(date(),-i);
-            boolean active=todaySessionMs(d)>0;
+            long dayMs=todaySessionMs(d);
+            boolean active=dayMs>0;
+            boolean metGoal=goalMin>0&&dayMs>=goalMin*60000L;
             boolean isToday=i==0;
             TextView chip=tv(new SimpleDateFormat("d",Locale.US).format(parseIso(d)),11);
-            chip.setGravity(Gravity.CENTER); chip.setContentDescription(displayDate(d)+(active?", tracked":", no activity")+", tap for details");
+            chip.setGravity(Gravity.CENTER); chip.setContentDescription(displayDate(d)+(metGoal?", daily goal met":active?", tracked":", no activity")+", tap for details");
             LinearLayout.LayoutParams lp=new LinearLayout.LayoutParams(0,dp(32),1); lp.setMargins(dp(2),0,dp(2),0);
             android.graphics.drawable.GradientDrawable gd=new android.graphics.drawable.GradientDrawable();
-            gd.setCornerRadius(dp(7)); gd.setColor(Color.parseColor(active?"#34C77B":"#1B202B"));
+            gd.setCornerRadius(dp(7)); gd.setColor(Color.parseColor(metGoal?"#FFD166":active?"#34C77B":"#1B202B"));
             if(isToday)gd.setStroke(dp(2),Color.parseColor("#4F8EF7"));
-            chip.setBackground(gd); chip.setTextColor(Color.parseColor(active?"#0B0F17":"#9AA4B8")); chip.setLayoutParams(lp);
+            chip.setBackground(gd); chip.setTextColor(Color.parseColor((metGoal||active)?"#0B0F17":"#9AA4B8")); chip.setLayoutParams(lp);
             chip.setOnClickListener(v->showDayDetailDialog(d));
             daysRow.addView(chip);
         }
-        c.addView(daysRow); parent.addView(c);
+        c.addView(daysRow);
+        Button lookup=btn("🔍 Look up any day"); lookup.setContentDescription("Look up tracked activity for any past date");
+        lookup.setOnClickListener(v->{
+            Calendar cal=Calendar.getInstance();
+            new DatePickerDialog(this,R.style.AppTheme_Dialog,(view,y,mo,dd)->{
+                showDayDetailDialog(String.format(Locale.US,"%04d-%02d-%02d",y,mo+1,dd));
+            },cal.get(Calendar.YEAR),cal.get(Calendar.MONTH),cal.get(Calendar.DAY_OF_MONTH)).show();
+        });
+        c.addView(lookup);
+        parent.addView(c);
+    }
+    /** Longest run of consecutive days (ever, not just recent) with any tracked time. */
+    int longestStreak(){
+        TreeSet<String> days=new TreeSet<>();
+        for(int i=0;i<sessions.length();i++){JSONObject s=sessions.optJSONObject(i);if(s!=null&&s.optLong("durationMs",0)>0)days.add(s.optString("date"));}
+        int longest=0,cur=0; String prev=null;
+        for(String d:days){ cur = (prev!=null&&shiftDate(prev,1).equals(d)) ? cur+1 : 1; longest=Math.max(longest,cur); prev=d; }
+        return longest;
+    }
+    long lifetimeTrackedMs(){long t=0;for(int i=0;i<sessions.length();i++){JSONObject s=sessions.optJSONObject(i);if(s!=null)t+=s.optLong("durationMs",0);}return t;}
+    void addAchievementsCard(LinearLayout parent){
+        LinearLayout c=card(); addText(c,"ACHIEVEMENTS",11);
+        int longest=longestStreak(); long lifetimeMs=lifetimeTrackedMs(); long lifetimeMin=lifetimeMs/60000;
+        addText(c,"Longest streak: "+longest+(longest==1?" day":" days")+" · Lifetime tracked: "+formatDuration(lifetimeMs),12);
+
+        addText(c,"Streak badges",11);
+        LinearLayout streakRow=new LinearLayout(this); streakRow.setOrientation(LinearLayout.HORIZONTAL); streakRow.setPadding(0,dp(4),0,dp(8));
+        int[] streakGoals={3,7,14,30,60,100};
+        for(int goal:streakGoals){
+            boolean unlocked=longest>=goal;
+            TextView badge=tv(goal+"d",11); badge.setGravity(Gravity.CENTER);
+            badge.setContentDescription((unlocked?"Unlocked: reached ":"Locked: reach ")+goal+" day streak");
+            LinearLayout.LayoutParams lp=new LinearLayout.LayoutParams(0,dp(30),1); lp.setMargins(dp(2),0,dp(2),0);
+            android.graphics.drawable.GradientDrawable gd=new android.graphics.drawable.GradientDrawable();
+            gd.setCornerRadius(dp(6)); gd.setColor(Color.parseColor(unlocked?"#FFD166":"#1B202B"));
+            badge.setBackground(gd); badge.setTextColor(Color.parseColor(unlocked?"#0B0F17":"#5A6172")); badge.setLayoutParams(lp);
+            streakRow.addView(badge);
+        }
+        c.addView(streakRow);
+
+        addText(c,"Lifetime hours badges",11);
+        LinearLayout hourRow=new LinearLayout(this); hourRow.setOrientation(LinearLayout.HORIZONTAL); hourRow.setPadding(0,dp(4),0,0);
+        int[] hourGoalsMin={60,300,600,1500,3000,6000};
+        String[] hourLabels={"1h","5h","10h","25h","50h","100h"};
+        for(int i=0;i<hourGoalsMin.length;i++){
+            boolean unlocked=lifetimeMin>=hourGoalsMin[i];
+            TextView badge=tv(hourLabels[i],11); badge.setGravity(Gravity.CENTER);
+            badge.setContentDescription((unlocked?"Unlocked: reached ":"Locked: reach ")+hourLabels[i]+" lifetime tracked");
+            LinearLayout.LayoutParams lp=new LinearLayout.LayoutParams(0,dp(30),1); lp.setMargins(dp(2),0,dp(2),0);
+            android.graphics.drawable.GradientDrawable gd=new android.graphics.drawable.GradientDrawable();
+            gd.setCornerRadius(dp(6)); gd.setColor(Color.parseColor(unlocked?"#4FD1FF":"#1B202B"));
+            badge.setBackground(gd); badge.setTextColor(Color.parseColor(unlocked?"#0B0F17":"#5A6172")); badge.setLayoutParams(lp);
+            hourRow.addView(badge);
+        }
+        c.addView(hourRow);
+        parent.addView(c);
+    }
+    void addDailyGoalCard(LinearLayout parent){
+        int goalMin=getSharedPreferences(PREFS,0).getInt(KEY_DAILY_GOAL_MIN,0);
+        if(goalMin<=0)return;
+        LinearLayout c=card(); addText(c,"DAILY GOAL",11);
+        String today=date();
+        long todayMs=todaySessionMs(today)+activeElapsedMsForDate(today);
+        long goalMs=goalMin*60000L;
+        int pct=(int)Math.min(100,Math.round(todayMs*100.0/goalMs));
+        boolean met=todayMs>=goalMs;
+        addText(c,met?"🎉 Goal reached!":formatDuration(todayMs)+" of "+formatDuration(goalMs),22);
+        ProgressBar pb=new ProgressBar(this,null,android.R.attr.progressBarStyleHorizontal); pb.setMax(100); pb.setProgress(pct);
+        c.addView(pb,new LinearLayout.LayoutParams(-1,dp(8)));
+        parent.addView(c);
     }
     Date parseIso(String iso){try{return new SimpleDateFormat("yyyy-MM-dd",Locale.US).parse(iso);}catch(Exception e){return new Date();}}
     /** Shows a day's tracked activities as proper rows (title, category, duration, session
