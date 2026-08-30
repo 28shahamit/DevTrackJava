@@ -25,7 +25,8 @@ public class MainActivity extends Activity {
     static final String KEY_TASKS="tasks";
     static final String KEY_SESSIONS="sessions";
     static final int REQ_NOTIFICATION=200;
-    static final int REQ_IMPORT=201, REQ_EXPORT=202, REQ_SCHEDULE_IMPORT=302, REQ_SCHEDULE_EXPORT=303;
+    static final int REQ_IMPORT=201, REQ_EXPORT=202, REQ_SCHEDULE_IMPORT=302, REQ_SCHEDULE_EXPORT=303, REQ_REPORT_EXPORT=304;
+    String pendingReportText;
 
     FrameLayout content;
     JSONObject roadmap;
@@ -98,6 +99,8 @@ public class MainActivity extends Activity {
     }
 
     static final String[] CATEGORY_NAMES={"WORK","LEARNING","PROJECT","CAREER","HEALTH","PERSONAL","FAMILY","COMMUTE","FOOD","SLEEP","BREAK","ENTERTAINMENT","DISTRACTION","OTHER"};
+    static final HashSet<String> PRODUCTIVE_CATS=new HashSet<>(Arrays.asList("WORK","LEARNING","PROJECT","CAREER"));
+    static final HashSet<String> WASTE_CATS=new HashSet<>(Arrays.asList("DISTRACTION","ENTERTAINMENT"));
     int categoryColor(String cat){
         if(cat==null)cat="OTHER";
         switch(cat.toUpperCase(Locale.US)){
@@ -562,6 +565,7 @@ public class MainActivity extends Activity {
         addText(day,"Real sessions: "+realSessionCount(today),13); box().addView(day);
 
         addStreakCard(box());
+        addProductivityCard(box());
 
         LinearLayout road=card(); addText(road,"ROADMAP PROGRESS",18);
         if(roadmaps!=null&&roadmaps.length()>0){
@@ -616,6 +620,11 @@ public class MainActivity extends Activity {
         Button exp=btn("📤 Export full backup");exp.setOnClickListener(v->exportBackup());data.addView(exp);
         Button reset=btn("Reset all data");reset.setOnClickListener(v->confirmReset());data.addView(reset);
         root.addView(data);
+
+        LinearLayout reports=card(); addText(reports,"PROGRESS REPORTS",18);
+        addText(reports,"A detailed, shareable breakdown of what you tracked, when, and how productive it was.",12);
+        Button exportReport=btn("📊 Export progress report");exportReport.setOnClickListener(v->exportProgressReportDialog());reports.addView(exportReport);
+        root.addView(reports);
     }
 
     /** CR-001: redesigned Add Task dialog — explicit labels, logical grouping, native date/time
@@ -1026,6 +1035,110 @@ public class MainActivity extends Activity {
         Collections.reverse(out);
         return out;
     }
+    /** Same grouping/detail richness as groupedRecentSessions, scoped to one specific day. Used by
+     *  the report export so each day's detail includes planned/started/adherence per activity. */
+    ArrayList<JSONObject> groupedSessionsForDay(String day){
+        LinkedHashMap<String,JSONObject> map=new LinkedHashMap<>();
+        for(JSONObject s:sessionObjectsForDate(day)){
+            String key=day+"|"+(!s.optString("scheduleId","").isEmpty()?s.optString("scheduleId"):(!s.optString("taskId","").isEmpty()?s.optString("taskId"):s.optString("title","")+"|"+s.optString("category","OTHER")));
+            JSONObject g=map.get(key);
+            try{
+                if(g==null){
+                    g=new JSONObject();
+                    g.put("date",day); g.put("title",s.optString("title")); g.put("category",s.optString("category","OTHER"));
+                    g.put("durationMs",0L); g.put("sessionCount",0); g.put("sessions",new JSONArray());
+                    if(s.has("plannedStart"))g.put("plannedStart",s.optString("plannedStart"));
+                    map.put(key,g);
+                }
+                g.put("durationMs",g.optLong("durationMs",0)+s.optLong("durationMs",0));
+                g.put("sessionCount",g.optInt("sessionCount",0)+1);
+                g.optJSONArray("sessions").put(s);
+            }catch(Exception ignored){}
+        }
+        return new ArrayList<>(map.values());
+    }
+    /** Builds a full plain-text progress report for [from,to] inclusive: productivity summary,
+     *  category breakdown, day-by-day activity detail (with planned/started/adherence where known),
+     *  and a roadmap snapshot. Shareable via any text/file app once exported. */
+    String buildProgressReport(String from,String to){
+        StringBuilder sb=new StringBuilder();
+        sb.append("DevTrack Progress Report\n");
+        sb.append(from.equals(to)?displayDate(from):(displayDate(from)+" – "+displayDate(to))).append("\n");
+        sb.append("Generated ").append(displayDate(date())).append(" ").append(clockLabel(System.currentTimeMillis())).append("\n");
+        sb.append("========================================\n\n");
+
+        long[] st=productivityStats(from,to);
+        long prod=st[0],waste=st[1],neutral=st[2]; long focusTotal=prod+waste; long total=prod+waste+neutral;
+        int focusPct=focusTotal>0?Math.round(prod*100f/focusTotal):0;
+        sb.append("PRODUCTIVITY SUMMARY\n");
+        sb.append("Total tracked: ").append(formatDuration(total)).append("\n");
+        sb.append("Productive (Work/Learning/Project/Career): ").append(formatDuration(prod)).append("\n");
+        sb.append("Distraction/Entertainment: ").append(formatDuration(waste)).append("\n");
+        sb.append("Neutral (life admin — health, food, sleep, family, etc.): ").append(formatDuration(neutral)).append("\n");
+        sb.append("Focus ratio: ").append(focusTotal>0?(focusPct+"%"):"n/a (no productive or distraction time logged)").append("\n\n");
+
+        LinkedHashMap<String,Long> byCat=new LinkedHashMap<>();
+        for(JSONObject s:sessionsInRange(from,to)){String c=s.optString("category","OTHER");byCat.put(c,(byCat.containsKey(c)?byCat.get(c):0L)+s.optLong("durationMs",0));}
+        sb.append("CATEGORY BREAKDOWN\n");
+        if(byCat.isEmpty())sb.append("No sessions in this range.\n");
+        else for(Map.Entry<String,Long> e:byCat.entrySet())sb.append(e.getKey()).append(": ").append(formatDurationSmart(e.getValue())).append("\n");
+        sb.append("\n");
+
+        sb.append("DAY-BY-DAY DETAIL\n");
+        String d=from;
+        while(d.compareTo(to)<=0){
+            long dayTotal=todaySessionMs(d);
+            sb.append("----------------------------------------\n");
+            sb.append(displayDate(d)).append(" — ").append(formatDuration(dayTotal)).append(" tracked\n");
+            ArrayList<JSONObject> groups=groupedSessionsForDay(d);
+            if(groups.isEmpty())sb.append("  No activity tracked.\n");
+            else for(JSONObject g:groups){
+                sb.append("  • ").append(g.optString("title")).append(" [").append(g.optString("category")).append("] — ").append(formatDurationSmart(g.optLong("durationMs",0)));
+                int cnt=g.optInt("sessionCount",1); if(cnt>1)sb.append(" (").append(cnt).append(" sessions)");
+                sb.append("\n");
+                JSONArray sess=g.optJSONArray("sessions"); JSONObject first=sess!=null&&sess.length()>0?sess.optJSONObject(0):null;
+                if(first!=null&&g.has("plannedStart")){
+                    sb.append("     Planned ").append(clockLabel(g.optString("plannedStart"))).append(" · Started ").append(clockLabel(first.optLong("startAt",0))).append(" · ").append(adherenceLabel(first.optInt("adherenceMin",0))).append("\n");
+                }
+            }
+            sb.append("\n");
+            d=shiftDate(d,1);
+        }
+
+        sb.append("ROADMAP SNAPSHOT\n");
+        if(roadmaps!=null&&roadmaps.length()>0){
+            for(int i=0;i<roadmaps.length();i++){JSONObject r=roadmaps.optJSONObject(i);if(r==null)continue;int totalT=topicCount(r);int done=completedFor(r.optString("id",roadmapId(r))).size();int pct=totalT==0?0:Math.round(done*100f/totalT);
+                sb.append(roadmapName(r)).append(": ").append(done).append("/").append(totalT).append(" ").append(roadmapItemLabel(r)).append(" (").append(pct).append("%)\n");
+            }
+        } else sb.append("No roadmaps imported.\n");
+        return sb.toString();
+    }
+    void exportProgressReportDialog(){
+        String[] options={"Today","This week (last 7 days)","This month (last 30 days)","Custom range"};
+        dlg().setTitle("Export progress report").setItems(options,(d,which)->{
+            String today=date();
+            if(which==0)generateAndExportReport(today,today);
+            else if(which==1)generateAndExportReport(shiftDate(today,-6),today);
+            else if(which==2)generateAndExportReport(shiftDate(today,-29),today);
+            else customRangeReportDialog();
+        }).show();
+    }
+    void customRangeReportDialog(){
+        LinearLayout l=new LinearLayout(this); l.setOrientation(LinearLayout.VERTICAL); l.setPadding(dp(20),dp(12),dp(20),dp(4));
+        String[] from={shiftDate(date(),-6)}; String[] to={date()};
+        addText(l,"From",12); l.addView(datePickerField(from));
+        addText(l,"To",12); l.addView(datePickerField(to));
+        dlg().setTitle("Custom range").setView(l).setPositiveButton("Export",(d,w)->{
+            if(from[0].compareTo(to[0])>0){toast("Start date must be before end date");return;}
+            generateAndExportReport(from[0],to[0]);
+        }).setNegativeButton("Cancel",null).show();
+    }
+    void generateAndExportReport(String from,String to){
+        pendingReportText=buildProgressReport(from,to);
+        Intent i=new Intent(Intent.ACTION_CREATE_DOCUMENT); i.setType("text/plain"); i.addCategory(Intent.CATEGORY_OPENABLE);
+        i.putExtra(Intent.EXTRA_TITLE,"devtrack-report-"+(from.equals(to)?from:(from+"_to_"+to))+".txt");
+        startActivityForResult(i,REQ_REPORT_EXPORT);
+    }
     /** Rebuilds Progress in place, keeping scroll position (used when expanding a session row). */
     void refreshProgress(){ int y=currentScrollY(); showProgress(); restoreScrollY(y); }
     void addSessionGroupRow(LinearLayout list,JSONObject g){
@@ -1075,6 +1188,43 @@ public class MainActivity extends Activity {
         list.addView(c);
     }
     /** Consecutive days (ending today, or yesterday if nothing tracked yet today) with any tracked time. */
+    /** Sessions whose date (yyyy-MM-dd, so plain string compare works) falls within [from,to] inclusive. */
+    ArrayList<JSONObject> sessionsInRange(String from,String to){
+        ArrayList<JSONObject> out=new ArrayList<>();
+        for(int i=0;i<sessions.length();i++){JSONObject s=sessions.optJSONObject(i);if(s==null||s.optLong("durationMs",0)<=0)continue;String d=s.optString("date");if(d.compareTo(from)>=0&&d.compareTo(to)<=0)out.add(s);}
+        return out;
+    }
+    /** {productiveMs, wasteMs, neutralMs}. Productive = Work/Learning/Project/Career. Waste = Distraction/Entertainment.
+     *  Everything else (health, food, sleep, family, etc.) is neutral life-admin time — not counted against you. */
+    long[] productivityStats(String from,String to){
+        long prod=0,waste=0,neutral=0;
+        for(JSONObject s:sessionsInRange(from,to)){
+            long ms=s.optLong("durationMs",0); String c=s.optString("category","OTHER");
+            if(PRODUCTIVE_CATS.contains(c))prod+=ms; else if(WASTE_CATS.contains(c))waste+=ms; else neutral+=ms;
+        }
+        return new long[]{prod,waste,neutral};
+    }
+    void addBarSegment(LinearLayout bar,long ms,long total,String color){
+        if(ms<=0||total<=0)return;
+        View seg=new View(this); android.graphics.drawable.GradientDrawable gd=new android.graphics.drawable.GradientDrawable(); gd.setColor(Color.parseColor(color)); seg.setBackground(gd);
+        bar.addView(seg,new LinearLayout.LayoutParams(0,-1,Math.max(0.02f,ms/(float)total)));
+    }
+    void addProductivityCard(LinearLayout parent){
+        LinearLayout c=card(); addText(c,"PRODUCTIVITY — TODAY",11);
+        long[] st=productivityStats(date(),date());
+        long prod=st[0],waste=st[1],neutral=st[2]; long focusTotal=prod+waste;
+        int pct=focusTotal>0?Math.round(prod*100f/focusTotal):0;
+        addText(c,(focusTotal>0?pct+"% focus":"No focus data yet"),28);
+        addText(c,"Productive "+formatDurationSmart(prod)+" · Distraction "+formatDurationSmart(waste)+" · Other "+formatDurationSmart(neutral),12);
+        LinearLayout bar=new LinearLayout(this); bar.setOrientation(LinearLayout.HORIZONTAL);
+        LinearLayout.LayoutParams barLp=new LinearLayout.LayoutParams(-1,dp(10)); barLp.topMargin=dp(8);
+        long total=prod+waste+neutral;
+        if(total>0){addBarSegment(bar,prod,total,"#34C77B");addBarSegment(bar,waste,total,"#FF6B6B");addBarSegment(bar,neutral,total,"#3A4152");}
+        else{View empty=new View(this);empty.setBackgroundColor(Color.parseColor("#1B202B"));bar.addView(empty,new LinearLayout.LayoutParams(-1,-1));}
+        c.addView(bar,barLp);
+        TextView hint=tv("Focus ratio = productive time ÷ (productive + distraction). Neutral time (meals, sleep, family, etc.) isn't counted against you.",10); hint.setTextColor(Color.parseColor("#5A6172")); hint.setPadding(0,dp(6),0,0); c.addView(hint);
+        parent.addView(c);
+    }
     int currentStreak(){
         String d=date(); if(todaySessionMs(d)<=0)d=shiftDate(d,-1);
         int streak=0; int guard=0;
@@ -1606,6 +1756,7 @@ public class MainActivity extends Activity {
         else if(req==REQ_SCHEDULE_EXPORT){ JSONObject sch=new JSONObject(); sch.put("format","devtrack-daily-schedule"); sch.put("version",1); sch.put("timezone",java.util.TimeZone.getDefault().getID()); sch.put("days",new JSONArray().put("MONDAY").put("TUESDAY").put("WEDNESDAY").put("THURSDAY").put("FRIDAY").put("SATURDAY").put("SUNDAY")); sch.put("blocks",schedules); write(data.getData(),sch.toString(2)); toast("Daily schedule exported"); }
         else if(req==300){String raw=read(data.getData());JSONObject s=new JSONObject(raw);if(s.has("roadmaps")){roadmaps=s.optJSONArray("roadmaps");if(roadmaps==null)roadmaps=new JSONArray();currentRoadmapId=s.optString("currentRoadmapId",roadmaps.length()>0?roadmaps.optJSONObject(0).optString("id"):null);roadmap=findRoadmap(currentRoadmapId);saveRoadmaps();}else if(s.has("roadmap")){JSONObject importedRoadmap=s.optJSONObject("roadmap");if(importedRoadmap!=null){normalizeRoadmap(importedRoadmap,"java-backend","Java Backend","☕");roadmaps=new JSONArray().put(importedRoadmap);currentRoadmapId=importedRoadmap.optString("id");roadmap=importedRoadmap;saveRoadmaps();}}if(s.has("completed")){completed.clear();JSONArray a=s.optJSONArray("completed");for(int i=0;i<a.length();i++)completed.add(a.optString(i));}tasks=s.optJSONArray("tasks");sessions=s.optJSONArray("sessions");schedules=s.optJSONArray("schedules");if(tasks==null)tasks=new JSONArray();if(sessions==null)sessions=new JSONArray();if(schedules==null)schedules=new JSONArray();saveState();scheduleAllImportedAlarms();toast("Backup imported");showHome();}
         else if(req==301){JSONObject s=new JSONObject();JSONArray c=new JSONArray();for(String id:completed)c.put(id);s.put("completed",c);s.put("tasks",tasks);s.put("sessions",sessions);s.put("schedules",schedules);s.put("roadmap",roadmap);s.put("roadmaps",roadmaps);s.put("currentRoadmapId",currentRoadmapId);write(data.getData(),s.toString(2));toast("Backup exported");}
+        else if(req==REQ_REPORT_EXPORT){write(data.getData(),pendingReportText==null?"":pendingReportText);pendingReportText=null;toast("Progress report exported");}
     }catch(Exception e){toast("Import/export failed: "+e.getMessage());}}
     String read(Uri u)throws Exception{InputStream in=getContentResolver().openInputStream(u);ByteArrayOutputStream b=new ByteArrayOutputStream();byte[] x=new byte[8192];int n;while((n=in.read(x))>0)b.write(x,0,n);return b.toString("UTF-8");}
     void write(Uri u,String s)throws Exception{OutputStream out=getContentResolver().openOutputStream(u);out.write(s.getBytes(StandardCharsets.UTF_8));out.close();}
