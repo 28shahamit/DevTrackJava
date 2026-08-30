@@ -470,7 +470,19 @@ public class MainActivity extends Activity {
             LinearLayout details=new LinearLayout(this); details.setOrientation(LinearLayout.VERTICAL); details.setPadding(dp(32),dp(2),dp(4),dp(2));
             if(meta.length()>0){TextView m=tv(meta.toString(),11);m.setTextColor(Color.parseColor("#9AA4B8"));details.addView(m);}
             JSONArray subs=t.optJSONArray("subtopics");
-            if(subs!=null&&subs.length()>0){TextView s=tv("Topics: "+joinJsonArray(subs),11);s.setTextColor(Color.parseColor("#9AA4B8"));details.addView(s);}
+            JSONObject subMin=t.optJSONObject("subtopicMinutes");
+            if(subs!=null&&subs.length()>0){
+                StringBuilder sb=new StringBuilder();
+                for(int si=0;si<subs.length();si++){
+                    String name=subName(subs,si); if(name.isEmpty())continue;
+                    int est=subEstimate(subs,si); int logged=subMin!=null?subMin.optInt(name,0):0;
+                    if(sb.length()>0)sb.append("\n");
+                    sb.append("• ").append(name);
+                    if(est>0){int rem=est-logged;sb.append("  —  ").append(formatMin(logged)).append(" / ").append(formatMin(est)).append(rem>=0?(" ("+formatMin(rem)+" left)"):(" ("+formatMin(-rem)+" over)"));}
+                    else sb.append(logged>0?("  —  "+formatMin(logged)+" logged"):"  —  not logged");
+                }
+                TextView s=tv(sb.toString(),11);s.setTextColor(Color.parseColor("#9AA4B8"));details.addView(s);
+            }
             JSONArray tags=t.optJSONArray("tags");
             if(tags!=null&&tags.length()>0){TextView tgv=tv("Tags: "+joinJsonArray(tags),11);tgv.setTextColor(Color.parseColor("#9AA4B8"));details.addView(tgv);}
             String primary=t.optString("url",""); JSONArray links=t.optJSONArray("links"); boolean hasLink=!primary.trim().isEmpty()||(links!=null&&links.length()>0);
@@ -484,9 +496,55 @@ public class MainActivity extends Activity {
             c.addView(details);
         }
 
+        int estimateMin=t.optInt("estimateMin",0);
+        if(estimateMin>0){
+            int actualMin=t.optInt("actualMin",0);
+            int pct=Math.min(100,Math.round(actualMin*100f/estimateMin));
+            LinearLayout timeRow=row(); timeRow.setPadding(dp(32),dp(2),dp(4),dp(0));
+            TextView timeLabel=tv(formatMin(actualMin)+" / "+formatMin(estimateMin)+(actualMin>estimateMin?" (over estimate)":""),10);
+            timeLabel.setTextColor(actualMin>=estimateMin?Color.parseColor("#FFD166"):Color.parseColor("#9AA4B8"));
+            timeRow.addView(timeLabel); c.addView(timeRow);
+            ProgressBar pb=new ProgressBar(this,null,android.R.attr.progressBarStyleHorizontal);pb.setMax(100);pb.setProgress(pct);
+            LinearLayout.LayoutParams pbp=new LinearLayout.LayoutParams(-1,dp(4));pbp.leftMargin=dp(32);pbp.rightMargin=dp(4);pbp.topMargin=dp(1);
+            c.addView(pb,pbp);
+        }
+
         cb.setOnClickListener(v->{HashSet<String> set=completedFor(currentRoadmapId);if(cb.isChecked())set.add(id);else set.remove(id);saveCompletedFor(currentRoadmapId,set);refreshRoadmap();});
         list.addView(c);
     }
+    interface TopicPicked{ void onPicked(String roadmapId,String topicId,String label); }
+    void pickRoadmapThenTopic(TopicPicked cb){
+        if(roadmaps==null||roadmaps.length()==0){toast("No roadmaps available");return;}
+        if(roadmaps.length()==1){pickTopicWithinRoadmap(roadmaps.optJSONObject(0),cb);return;}
+        String[] rNames=new String[roadmaps.length()];
+        for(int i=0;i<roadmaps.length();i++){JSONObject r=roadmaps.optJSONObject(i);rNames[i]=r==null?"":r.optString("icon","📚")+" "+roadmapName(r);}
+        dlg().setTitle("Choose roadmap").setItems(rNames,(d,w)->{JSONObject r=roadmaps.optJSONObject(w);if(r!=null)pickTopicWithinRoadmap(r,cb);}).show();
+    }
+    void pickTopicWithinRoadmap(JSONObject r,TopicPicked cb){
+        ArrayList<String> labels=new ArrayList<>(); ArrayList<String> ids=new ArrayList<>();
+        JSONArray phases=r.optJSONArray("phases");
+        if(phases!=null)for(int i=0;i<phases.length();i++){
+            JSONObject ph=phases.optJSONObject(i); if(ph==null)continue;
+            JSONArray topics=phaseTopics(ph);
+            for(int j=0;j<topics.length();j++){JSONObject t=topics.optJSONObject(j);if(t==null)continue;labels.add("P"+ph.optInt("number",i+1)+" · "+ph.optString("title","")+" › "+t.optString("title"));ids.add(t.optString("id"));}
+        }
+        if(labels.isEmpty()){toast("This roadmap has no topics yet");return;}
+        dlg().setTitle("Choose topic").setItems(labels.toArray(new String[0]),(d,w)->{
+            String tid=ids.get(w); JSONObject t=findTopicById(r,tid);
+            cb.onPicked(r.optString("id",roadmapId(r)),tid,roadmapName(r)+" › "+(t!=null?t.optString("title"):""));
+        }).show();
+    }
+    JSONObject findTopicById(JSONObject r,String topicId){
+        if(r==null||topicId==null||topicId.isEmpty())return null;
+        JSONArray phases=r.optJSONArray("phases"); if(phases==null)return null;
+        for(int i=0;i<phases.length();i++){
+            JSONObject ph=phases.optJSONObject(i); if(ph==null)continue;
+            JSONArray topics=phaseTopics(ph);
+            for(int j=0;j<topics.length();j++){JSONObject t=topics.optJSONObject(j);if(t!=null&&topicId.equals(t.optString("id")))return t;}
+        }
+        return null;
+    }
+    JSONObject findScheduleBlock(String id){if(id==null||id.isEmpty())return null;for(int i=0;i<schedules.length();i++){JSONObject b=schedules.optJSONObject(i);if(b!=null&&id.equals(b.optString("id")))return b;}return null;}
     void topicOverflowMenu(JSONObject phase,JSONObject t){
         boolean saved=t.optBoolean("saved",false); boolean later=t.optBoolean("later",false);
         String[] opts={saved?"★ Remove from saved":"☆ Save for later",later?"↺ Remove from later":"↺ Mark for later","✎ Edit","🗑 Delete","Cancel"};
@@ -508,6 +566,62 @@ public class MainActivity extends Activity {
             if(urls.size()==1){startActivity(new Intent(Intent.ACTION_VIEW,Uri.parse(urls.get(0))));return;}
             dlg().setTitle(t.optString("title","Resources")).setItems(titles.toArray(new String[0]),(d,w)->{try{startActivity(new Intent(Intent.ACTION_VIEW,Uri.parse(urls.get(w))));}catch(Exception e){toast("No app can open this link");}}).show();
         }catch(Exception e){toast("Could not open link");}
+    }
+
+    /** Every topic (across all roadmaps) that has an estimate, actual time logged against it,
+     *  and — where the user has checked things off during session review — a per-subtopic split.
+     *  Sorted worst-estimate-miss first so the topics that ran furthest over surface at the top. */
+    void showTimeReport(){
+        baseWithBack("Time vs Estimate","How your actual study time compares to what you estimated, per roadmap topic.",()->showProgress());
+        LinearLayout root=box();
+        ArrayList<JSONObject> rows=new ArrayList<>();
+        if(roadmaps!=null)for(int i=0;i<roadmaps.length();i++){
+            JSONObject r=roadmaps.optJSONObject(i); if(r==null)continue;
+            JSONArray phases=r.optJSONArray("phases"); if(phases==null)continue;
+            for(int pi=0;pi<phases.length();pi++){
+                JSONObject ph=phases.optJSONObject(pi); if(ph==null)continue;
+                JSONArray topics=phaseTopics(ph);
+                for(int ti=0;ti<topics.length();ti++){
+                    JSONObject t=topics.optJSONObject(ti); if(t==null)continue;
+                    if(t.optInt("estimateMin",0)<=0 && t.optInt("actualMin",0)<=0) continue;
+                    try{JSONObject row=new JSONObject();row.put("roadmapName",roadmapName(r));row.put("topic",t);rows.add(row);}catch(Exception ignored){}
+                }
+            }
+        }
+        if(rows.isEmpty()){
+            LinearLayout empty=card(); addText(empty,"No topics with logged or estimated time yet.",13);
+            addText(empty,"Set an estimate on a roadmap item, then link a schedule block to it — time tracked there will show up here.",11);
+            root.addView(empty); return;
+        }
+        Collections.sort(rows,(x,y)->{
+            JSONObject tx=x.optJSONObject("topic"),ty=y.optJSONObject("topic");
+            int vx=tx.optInt("actualMin",0)-tx.optInt("estimateMin",0), vy=ty.optInt("actualMin",0)-ty.optInt("estimateMin",0);
+            return Integer.compare(vy,vx);
+        });
+        for(JSONObject row:rows){
+            JSONObject t=row.optJSONObject("topic");
+            int est=t.optInt("estimateMin",0), actual=t.optInt("actualMin",0);
+            LinearLayout c=card();
+            addText(c,t.optString("title"),15);
+            TextView rn=tv(row.optString("roadmapName"),11); rn.setTextColor(Color.parseColor("#9AA4B8")); c.addView(rn);
+            if(est>0){
+                int diff=actual-est; String diffLabel=diff==0?"On estimate":(diff>0?formatMin(diff)+" over":formatMin(-diff)+" under");
+                TextView line=tv(formatMin(actual)+" / "+formatMin(est)+"  ·  "+diffLabel,13);
+                line.setTextColor(diff>0?Color.parseColor("#FFD166"):Color.parseColor("#7FE0A8"));
+                c.addView(line);
+                ProgressBar pb=new ProgressBar(this,null,android.R.attr.progressBarStyleHorizontal);pb.setMax(100);pb.setProgress(Math.min(100,Math.round(actual*100f/est)));
+                c.addView(pb,new LinearLayout.LayoutParams(-1,dp(6)));
+            } else {
+                TextView line=tv(formatMin(actual)+" logged · no estimate set",13); line.setTextColor(Color.parseColor("#9AA4B8")); c.addView(line);
+            }
+            JSONObject subMin=t.optJSONObject("subtopicMinutes");
+            if(subMin!=null&&subMin.length()>0){
+                StringBuilder sb=new StringBuilder(); java.util.Iterator<String> keys=subMin.keys();
+                while(keys.hasNext()){String k=keys.next();if(sb.length()>0)sb.append("  ·  ");sb.append(k).append(" ").append(formatMin(subMin.optInt(k,0)));}
+                TextView subLine=tv(sb.toString(),11); subLine.setTextColor(Color.parseColor("#9AA4B8")); subLine.setPadding(0,dp(4),0,0); c.addView(subLine);
+            }
+            root.addView(c);
+        }
     }
 
     void showPlan(){
@@ -575,7 +689,9 @@ public class MainActivity extends Activity {
         LinearLayout road=card(); addText(road,"ROADMAP PROGRESS",18);
         if(roadmaps!=null&&roadmaps.length()>0){
             for(int i=0;i<roadmaps.length();i++){JSONObject r=roadmaps.optJSONObject(i);if(r==null)continue;int total=topicCount(r);int done=completedFor(r.optString("id",roadmapId(r))).size();int pct=total==0?0:Math.round(done*100f/total);addText(road,r.optString("icon","📚")+"  "+roadmapName(r)+"   "+done+" / "+total+" "+roadmapItemLabel(r)+" · "+pct+"%",14);ProgressBar rb=new ProgressBar(this,null,android.R.attr.progressBarStyleHorizontal);rb.setMax(100);rb.setProgress(pct);road.addView(rb,new LinearLayout.LayoutParams(-1,dp(6)));}
-        } else addText(road,"No roadmaps imported.",13); box().addView(road);
+        } else addText(road,"No roadmaps imported.",13);
+        Button timeReportBtn=btn("⏱ Time vs Estimate"); timeReportBtn.setOnClickListener(v->showTimeReport()); road.addView(timeReportBtn);
+        box().addView(road);
 
         LinearLayout sessionsCard=card(); addText(sessionsCard,"RECENT STUDY SESSIONS",18);
         ArrayList<JSONObject> groups=groupedRecentSessions(30); int shown=Math.min(10,groups.size());
@@ -857,14 +973,15 @@ public class MainActivity extends Activity {
     void startScheduleBlock(JSONObject b){
         if(b==null)return; if(getActiveTimer()!=null){toast("Stop the current timer first.");return;}
         if(isPlanCompletedForDate(b.optString("id"),date())){toast("This planned activity is already complete.");return;}
-        startPersistentTimer(b.optString("title","Planned activity"),b.optString("category","OTHER"),null,b.optString("id"),b.optString("start",""));
+        startPersistentTimer(b.optString("title","Planned activity"),b.optString("category","OTHER"),null,b.optString("id"),b.optString("start",""),b.optString("linkedRoadmapId",""),b.optString("linkedTopicId",""));
     }
 
-    void startPersistentTimer(String title,String category,String taskId,String scheduleId){ startPersistentTimer(title,category,taskId,scheduleId,""); }
+    void startPersistentTimer(String title,String category,String taskId,String scheduleId){ startPersistentTimer(title,category,taskId,scheduleId,"","",""); }
     /** plannedStart: "HH:mm" the block was scheduled for, or "" if this activity has no fixed schedule (manual/task). */
-    void startPersistentTimer(String title,String category,String taskId,String scheduleId,String plannedStart){
+    void startPersistentTimer(String title,String category,String taskId,String scheduleId,String plannedStart){ startPersistentTimer(title,category,taskId,scheduleId,plannedStart,"",""); }
+    void startPersistentTimer(String title,String category,String taskId,String scheduleId,String plannedStart,String linkedRoadmapId,String linkedTopicId){
         try{
-            JSONObject a=new JSONObject();a.put("id",UUID.randomUUID().toString());a.put("title",title);a.put("category",category);a.put("taskId",taskId==null?"":taskId);a.put("scheduleId",scheduleId==null?"":scheduleId);a.put("startAt",System.currentTimeMillis());a.put("date",date());a.put("completed",false);
+            JSONObject a=new JSONObject();a.put("id",UUID.randomUUID().toString());a.put("title",title);a.put("category",category);a.put("taskId",taskId==null?"":taskId);a.put("scheduleId",scheduleId==null?"":scheduleId);a.put("linkedRoadmapId",linkedRoadmapId==null?"":linkedRoadmapId);a.put("linkedTopicId",linkedTopicId==null?"":linkedTopicId);a.put("startAt",System.currentTimeMillis());a.put("date",date());a.put("completed",false);
             if(plannedStart!=null&&!plannedStart.isEmpty()){
                 a.put("plannedStart",plannedStart);
                 int plannedMin=toMinutes(plannedStart);
@@ -900,13 +1017,83 @@ public class MainActivity extends Activity {
         long end=System.currentTimeMillis();long duration=Math.max(0,end-a.optLong("startAt",end));
         if(duration<1000){clearActiveTimer();saveState();toast("No measurable time was recorded.");showHome();return;}
         try{
-            JSONObject session=new JSONObject();session.put("id",UUID.randomUUID().toString());session.put("title",a.optString("title"));session.put("category",a.optString("category","OTHER"));session.put("date",a.optString("date",date()));session.put("durationMs",duration);session.put("startAt",a.optLong("startAt",end));session.put("endAt",end);session.put("createdAt",dateTime());session.put("taskId",a.optString("taskId",""));session.put("scheduleId",a.optString("scheduleId",""));session.put("completed",complete);
+            JSONObject session=new JSONObject();session.put("id",UUID.randomUUID().toString());session.put("title",a.optString("title"));session.put("category",a.optString("category","OTHER"));session.put("date",a.optString("date",date()));session.put("durationMs",duration);session.put("startAt",a.optLong("startAt",end));session.put("endAt",end);session.put("createdAt",dateTime());session.put("taskId",a.optString("taskId",""));session.put("scheduleId",a.optString("scheduleId",""));session.put("linkedRoadmapId",a.optString("linkedRoadmapId",""));session.put("linkedTopicId",a.optString("linkedTopicId",""));session.put("completed",complete);
             if(a.has("plannedStart")){session.put("plannedStart",a.optString("plannedStart"));session.put("adherenceMin",a.optInt("adherenceMin",0));}
             sessions.put(session);
             String taskId=a.optString("taskId","");if(!taskId.isEmpty()){JSONObject task=findTask(taskId);if(task!=null){int min=Math.max(1,(int)Math.round(duration/60000f));task.put("actualMin",task.optInt("actualMin",0)+min);task.put("remainingMin",Math.max(0,task.optInt("remainingMin",task.optInt("estimateMin",min))-min));if(complete){task.put("status","completed");task.put("remainingMin",0);task.put("completedAt",dateTime());}else task.put("status","in_progress");}}
             String scheduleId=a.optString("scheduleId","");if(complete&&!scheduleId.isEmpty())markPlanCompleted(scheduleId,a.optString("date",date()));
+
+            String linkedRoadmapId=a.optString("linkedRoadmapId",""),linkedTopicId=a.optString("linkedTopicId","");
+            JSONObject linkedTopic=null; int loggedMin=0;
+            if(!linkedTopicId.isEmpty()){
+                JSONObject lr=findRoadmap(linkedRoadmapId);
+                linkedTopic=lr==null?null:findTopicById(lr,linkedTopicId);
+                if(linkedTopic!=null){
+                    loggedMin=Math.max(1,(int)Math.round(duration/60000f));
+                    int newActual=linkedTopic.optInt("actualMin",0)+loggedMin;
+                    linkedTopic.put("actualMin",newActual);
+                    int est=linkedTopic.optInt("estimateMin",0);
+                    if(est>0)linkedTopic.put("remainingMin",Math.max(0,est-newActual));
+                    saveRoadmaps();
+                }
+            }
             clearActiveTimer();saveState();toast("Saved "+formatDurationSmart(duration));showHome();
+            if(linkedTopic!=null)showSessionReviewDialog(linkedRoadmapId,linkedTopic,loggedMin);
         }catch(Exception e){toast("Could not save session: "+safeMessage(e));}
+    }
+
+    /** Shown after a tracked session ends on a schedule block linked to a roadmap topic — this is
+     *  the "end the task" confirmation: it states remaining time or how far over the estimate the
+     *  topic now is, lets the user log which subtopics they actually covered (time splits across the
+     *  ones checked), and asks Completed / In progress. Nothing here is auto-decided. */
+    void showSessionReviewDialog(String roadmapId,JSONObject topic,int loggedMin){
+        LinearLayout l=new LinearLayout(this); l.setOrientation(LinearLayout.VERTICAL); l.setPadding(dp(16),dp(8),dp(16),dp(8));
+        int est=topic.optInt("estimateMin",0), actual=topic.optInt("actualMin",0);
+        addText(l,formatMin(loggedMin)+" tracked for \""+topic.optString("title")+"\"",14);
+        if(est>0){
+            int diff=est-actual;
+            String statusLine=diff>=0?(formatMin(diff)+" remaining of "+formatMin(est)+" estimate"):(formatMin(-diff)+" over the "+formatMin(est)+" estimate");
+            TextView statusTv=tv(statusLine,13); statusTv.setTextColor(diff>=0?Color.parseColor("#7FE0A8"):Color.parseColor("#FFD166")); statusTv.setPadding(0,dp(2),0,0); l.addView(statusTv);
+        } else {
+            TextView noEst=tv(formatMin(actual)+" logged so far · no estimate set",13); noEst.setTextColor(Color.parseColor("#9AA4B8")); l.addView(noEst);
+        }
+
+        JSONArray subs=topic.optJSONArray("subtopics");
+        JSONObject subMinExisting=topic.optJSONObject("subtopicMinutes");
+        ArrayList<CheckBox> boxes=new ArrayList<>(); ArrayList<String> names=new ArrayList<>();
+        if(subs!=null&&subs.length()>0){
+            addSpace(l,8); addText(l,"Which parts did you actually cover this session?",11);
+            for(int i=0;i<subs.length();i++){
+                String name=subName(subs,i); if(name.isEmpty())continue;
+                int subEst=subEstimate(subs,i); int subLogged=subMinExisting!=null?subMinExisting.optInt(name,0):0;
+                String label=name; if(subEst>0)label+="  ("+formatMin(subLogged)+"/"+formatMin(subEst)+")";
+                names.add(name);
+                CheckBox cb=new CheckBox(this); cb.setText(label); cb.setTextColor(Color.parseColor("#F4F6FB"));
+                boxes.add(cb); l.addView(cb);
+            }
+        }
+        addSpace(l,8); addText(l,"Is this topic completed or still in progress?",11);
+        ScrollView scroll=new ScrollView(this); scroll.addView(l);
+        Runnable applySubtopicSplit=()->{
+            try{
+                if(boxes.isEmpty())return;
+                int checkedCount=0; for(CheckBox cb:boxes) if(cb.isChecked()) checkedCount++;
+                if(checkedCount==0)return;
+                JSONObject subMin=topic.optJSONObject("subtopicMinutes"); if(subMin==null)subMin=new JSONObject();
+                int share=Math.max(1,loggedMin/checkedCount);
+                for(int i=0;i<boxes.size();i++) if(boxes.get(i).isChecked()) subMin.put(names.get(i),subMin.optInt(names.get(i),0)+share);
+                topic.put("subtopicMinutes",subMin); saveRoadmaps();
+            }catch(Exception ignored){}
+        };
+        dlg().setTitle("Session complete").setView(scroll)
+            .setPositiveButton("✓ Completed",(d,w)->{
+                applySubtopicSplit.run();
+                try{HashSet<String> set=completedFor(roadmapId);set.add(topic.optString("id"));saveCompletedFor(roadmapId,set);topic.put("remainingMin",0);saveRoadmaps();}catch(Exception ignored){}
+                toast("Marked \""+topic.optString("title")+"\" as done");
+            })
+            .setNegativeButton("○ In progress",(d,w)->applySubtopicSplit.run())
+            .setNeutralButton("Skip",null)
+            .show();
     }
 
     void resumeSession(JSONObject s){
@@ -915,14 +1102,21 @@ public class MainActivity extends Activity {
         if(s.optBoolean("completed",false)){toast("This activity is already complete.");return;}
         if(!scheduleId.isEmpty()&&isPlanCompletedForDate(scheduleId,date())){toast("This planned activity is already complete.");return;}
         if(!taskId.isEmpty()){JSONObject t=findTask(taskId);if(t==null){toast("The original task is no longer available.");return;}if("completed".equals(t.optString("status"))){toast("This task is already complete.");return;}try{t.put("status","in_progress");saveState();}catch(Exception ignored){}startPersistentTimer(t.optString("title",s.optString("title")),t.optString("category",s.optString("category","OTHER")),taskId,scheduleId);return;}
-        startPersistentTimer(s.optString("title"),s.optString("category","OTHER"),null,scheduleId);
+        JSONObject block=findScheduleBlock(scheduleId);
+        String lr=block!=null?block.optString("linkedRoadmapId",""):s.optString("linkedRoadmapId","");
+        String lt=block!=null?block.optString("linkedTopicId",""):s.optString("linkedTopicId","");
+        startPersistentTimer(s.optString("title"),s.optString("category","OTHER"),null,scheduleId,"",lr,lt);
     }
 
     void resumeSessionFromGroup(JSONObject g){
         if(getActiveTimer()!=null){toast("Stop the current timer first.");return;}
         if(g.optBoolean("completed",false)){toast("This activity is already complete.");return;}
         JSONObject source=g.optJSONObject("lastSession");if(source!=null){resumeSession(source);return;}
-        startPersistentTimer(g.optString("title"),g.optString("category","OTHER"),g.optString("taskId",""),g.optString("scheduleId",""));
+        String scheduleId=g.optString("scheduleId","");
+        JSONObject block=findScheduleBlock(scheduleId);
+        String lr=block!=null?block.optString("linkedRoadmapId",""):"";
+        String lt=block!=null?block.optString("linkedTopicId",""):"";
+        startPersistentTimer(g.optString("title"),g.optString("category","OTHER"),g.optString("taskId",""),scheduleId,"",lr,lt);
     }
 
     JSONObject findTask(String id){for(int i=0;i<tasks.length();i++){JSONObject t=tasks.optJSONObject(i);if(t!=null&&id.equals(t.optString("id")))return t;}return null;}
@@ -987,8 +1181,13 @@ public class MainActivity extends Activity {
         CheckBox interview=new CheckBox(this);interview.setText("Interview item");interview.setTextColor(Color.parseColor("#F4F6FB"));interview.setChecked(existing!=null&&existing.optBoolean("interview",false));
         LinearLayout.LayoutParams ip=new LinearLayout.LayoutParams(-2,-2); ip.topMargin=dp(6); interview.setLayoutParams(ip); l.addView(interview);
 
+        addText(l,"Estimated time to master (minutes, optional)",11);
+        EditText estimate=new EditText(this);estimate.setHint("e.g. 240 for a 4h topic");estimate.setInputType(android.text.InputType.TYPE_CLASS_NUMBER);
+        int existingEstimate=existing==null?0:existing.optInt("estimateMin",0);
+        estimate.setText(existingEstimate>0?String.valueOf(existingEstimate):"");l.addView(estimate);
+
         addText(l,"Subtopics",11);
-        EditText subs=new EditText(this);subs.setHint("Comma separated, e.g. filter, map, reduce");subs.setText(existing==null?"":joinJsonArray(existing.optJSONArray("subtopics")));l.addView(subs);
+        EditText subs=new EditText(this);subs.setHint("Comma separated. Add :minutes for its own estimate, e.g. filter:20, map:15, reduce");subs.setText(existing==null?"":subtopicsToText(existing.optJSONArray("subtopics")));l.addView(subs);
 
         addText(l,"Tags",11);
         EditText tags=new EditText(this);tags.setHint("Comma separated");tags.setText(existing==null?"":joinJsonArray(existing.optJSONArray("tags")));l.addView(tags);
@@ -1006,7 +1205,10 @@ public class MainActivity extends Activity {
             t.put("priority",String.valueOf(priority.getSelectedItem()));
             String diff=String.valueOf(difficulty.getSelectedItem()); if("UNSET".equals(diff))t.remove("difficulty"); else t.put("difficulty",diff);
             t.put("interview",interview.isChecked());
-            String raw=subs.getText().toString().trim();JSONArray a=new JSONArray();if(!raw.isEmpty())for(String x:raw.split(","))if(!x.trim().isEmpty())a.put(x.trim());if(a.length()>0)t.put("subtopics",a);else t.remove("subtopics");
+            String estRaw=estimate.getText().toString().trim();
+            if(estRaw.isEmpty()){t.remove("estimateMin");t.remove("remainingMin");}
+            else{int est=Math.max(0,Integer.parseInt(estRaw));if(est==0){t.remove("estimateMin");t.remove("remainingMin");}else{t.put("estimateMin",est);t.put("remainingMin",Math.max(0,est-t.optInt("actualMin",0)));}}
+            String raw=subs.getText().toString().trim();JSONArray a=parseSubtopics(raw);if(a.length()>0)t.put("subtopics",a);else t.remove("subtopics");
             String tagRaw=tags.getText().toString().trim();JSONArray tagArray=new JSONArray();if(!tagRaw.isEmpty())for(String x:tagRaw.split(","))if(!x.trim().isEmpty())tagArray.put(x.trim());if(tagArray.length()>0)t.put("tags",tagArray);else t.remove("tags");
             String primary=url.getText().toString().trim();if(primary.isEmpty())t.remove("url");else t.put("url",primary);
             JSONArray extra=parseLinks(links.getText().toString());if(extra.length()>0)t.put("links",extra);else t.remove("links");
@@ -1016,6 +1218,23 @@ public class MainActivity extends Activity {
     String linksToText(JSONArray links){if(links==null)return "";StringBuilder b=new StringBuilder();for(int i=0;i<links.length();i++){JSONObject l=links.optJSONObject(i);if(l==null)continue;if(b.length()>0)b.append("\n");b.append(l.optString("title","Resource")).append(" | ").append(l.optString("url",""));}return b.toString();}
     JSONArray parseLinks(String raw){JSONArray out=new JSONArray();if(raw==null||raw.trim().isEmpty())return out;for(String line:raw.split("\\n")){String[] p=line.split("\\|",2);if(p.length<2)continue;String title=p[0].trim(),url=p[1].trim();if(url.isEmpty())continue;JSONObject o=new JSONObject();try{o.put("title",title.isEmpty()?"Resource":title);o.put("url",url);out.put(o);}catch(Exception ignored){}}return out;}
     String joinJsonArray(JSONArray a){if(a==null)return "";StringBuilder b=new StringBuilder();for(int i=0;i<a.length();i++){if(i>0)b.append(", ");b.append(a.optString(i));}return b.toString();}
+    /** Subtopics can be a plain string ("filter") or an object with its own estimate
+     *  ({"name":"filter","estimateMin":20}). These helpers read either form uniformly so
+     *  older roadmap JSON (plain strings) keeps working untouched. */
+    String subName(JSONArray subs,int i){Object v=subs.opt(i); if(v instanceof JSONObject) return ((JSONObject)v).optString("name",""); return subs.optString(i,"");}
+    int subEstimate(JSONArray subs,int i){Object v=subs.opt(i); if(v instanceof JSONObject) return ((JSONObject)v).optInt("estimateMin",0); return 0;}
+    String subtopicsToText(JSONArray subs){if(subs==null)return "";StringBuilder b=new StringBuilder();for(int i=0;i<subs.length();i++){if(i>0)b.append(", ");b.append(subName(subs,i));int e=subEstimate(subs,i);if(e>0)b.append(":").append(e);}return b.toString();}
+    /** Parses "name" or "name:minutes" per comma-separated entry. */
+    JSONArray parseSubtopics(String raw){
+        JSONArray out=new JSONArray(); if(raw==null||raw.trim().isEmpty())return out;
+        for(String part:raw.split(",")){
+            String x=part.trim(); if(x.isEmpty())continue;
+            int colon=x.lastIndexOf(':'); String name=x; int est=0;
+            if(colon>0){try{est=Integer.parseInt(x.substring(colon+1).trim());name=x.substring(0,colon).trim();}catch(Exception ignored){name=x;est=0;}}
+            try{ if(est>0){JSONObject o=new JSONObject();o.put("name",name);o.put("estimateMin",est);out.put(o);} else out.put(name); }catch(Exception ignored){}
+        }
+        return out;
+    }
     void addPhaseDialog(){LinearLayout l=new LinearLayout(this);l.setOrientation(LinearLayout.VERTICAL);EditText name=new EditText(this);name.setHint("Phase title");l.addView(name);EditText duration=new EditText(this);duration.setHint("Duration, e.g. Week 1");l.addView(duration);dlg().setTitle("Add phase").setView(l).setPositiveButton("Add",(d,w)->{try{JSONArray ps=roadmap.optJSONArray("phases");if(ps==null){ps=new JSONArray();roadmap.put("phases",ps);}JSONObject ph=new JSONObject();ph.put("id",UUID.randomUUID().toString());ph.put("number",ps.length()+1);ph.put("title",name.getText().toString().trim());ph.put("duration",duration.getText().toString().trim());ph.put("topics",new JSONArray());ps.put(ph);saveRoadmaps();refreshRoadmap();}catch(Exception e){toast("Could not add phase");}}).setNegativeButton("Cancel",null).show();}
     String roadmapItemLabel(JSONObject r){
         if(r!=null){String type=r.optString("itemType","").trim();if("question".equalsIgnoreCase(type))return "questions";String name=roadmapName(r).toLowerCase(Locale.US);if(name.contains("dsa")||name.contains("data structures")||name.contains("algorithm"))return "questions";}
@@ -1556,6 +1775,12 @@ public class MainActivity extends Activity {
         mid.addView(labelWithDot(b.optString("category","OTHER")+(b.optBoolean("track",true)?" · in time tracking":""),categoryColor(b.optString("category","OTHER")),11));
         String stateLabel=scheduleStateLabelWithMeta(b); TextView stateTv=tv(stateLabel,12); stateTv.setTextColor(stateColor(stateLabel)); mid.addView(stateTv);
         if(overlap){TextView warn=tv("⚠ Overlaps another block",11);warn.setTextColor(Color.parseColor("#FFB84F"));mid.addView(warn);}
+        String linkedTopicId=b.optString("linkedTopicId","");
+        if(!linkedTopicId.isEmpty()){
+            JSONObject lr=findRoadmap(b.optString("linkedRoadmapId",""));
+            JSONObject lt=lr==null?null:findTopicById(lr,linkedTopicId);
+            if(lt!=null){TextView link=tv("🔗 "+lt.optString("title"),11);link.setTextColor(Color.parseColor("#4FD1FF"));mid.addView(link);}
+        }
         row.addView(mid,new LinearLayout.LayoutParams(0,-2,1));
         JSONObject alarm=b.optJSONObject("alarm");if(alarm!=null&&alarm.optBoolean("enabled",false)){TextView al=tv("🔔",16);row.addView(al,new LinearLayout.LayoutParams(dp(34),-2));}
         boolean complete=isPlanCompletedForDate(b.optString("id"),date());
@@ -1720,6 +1945,24 @@ public class MainActivity extends Activity {
 
         CheckBox track=new CheckBox(this);track.setText("Include in time tracking");track.setTextColor(Color.parseColor("#F4F6FB"));track.setChecked(existing==null||existing.optBoolean("track",true));l.addView(track);
 
+        addText(l,"Link to roadmap topic (optional)",11);
+        String[] linkRoadmapId={existing!=null?existing.optString("linkedRoadmapId",""):""};
+        String[] linkTopicId={existing!=null?existing.optString("linkedTopicId",""):""};
+        TextView linkStatus=tv("Not linked",13); linkStatus.setTextColor(Color.parseColor("#9AA4B8"));
+        if(!linkTopicId[0].isEmpty()){
+            JSONObject rr=findRoadmap(linkRoadmapId[0]); JSONObject tt=rr==null?null:findTopicById(rr,linkTopicId[0]);
+            if(tt!=null){linkStatus.setText(roadmapName(rr)+" › "+tt.optString("title"));linkStatus.setTextColor(Color.parseColor("#7FE0A8"));}
+            else{linkRoadmapId[0]="";linkTopicId[0]="";}
+        }
+        LinearLayout linkRow=row();
+        linkRow.addView(linkStatus,new LinearLayout.LayoutParams(0,-2,1));
+        Button linkBtn=btn("Choose"); linkRow.addView(linkBtn);
+        Button clearLinkBtn=iconBtn("✕","Remove link"); linkRow.addView(clearLinkBtn);
+        l.addView(linkRow);
+        clearLinkBtn.setOnClickListener(v->{linkRoadmapId[0]="";linkTopicId[0]="";linkStatus.setText("Not linked");linkStatus.setTextColor(Color.parseColor("#9AA4B8"));});
+        linkBtn.setOnClickListener(v->pickRoadmapThenTopic((rid,tid,label)->{linkRoadmapId[0]=rid;linkTopicId[0]=tid;linkStatus.setText(label);linkStatus.setTextColor(Color.parseColor("#7FE0A8"));}));
+        addText(l,"Finishing a tracked session on a linked block logs time against that roadmap topic.",10);
+
         CheckBox alarm=new CheckBox(this);alarm.setText("Alarm");alarm.setTextColor(Color.parseColor("#F4F6FB"));alarm.setChecked(existing!=null&&existing.optJSONObject("alarm")!=null&&existing.optJSONObject("alarm").optBoolean("enabled",false));l.addView(alarm);
         int existingMins=existing!=null&&existing.optJSONObject("alarm")!=null?existing.optJSONObject("alarm").optInt("minutesBefore",5):5;
         Spinner minsSp=alarmMinutesSpinner(existingMins); minsSp.setVisibility(alarm.isChecked()?View.VISIBLE:View.GONE); l.addView(minsSp);
@@ -1760,6 +2003,8 @@ public class MainActivity extends Activity {
                             b.put("id",candidate.getString("id")); b.put("title",titleVal); b.put("start",startVal); b.put("end",endVal);
                             b.put("category",candidate.getString("category")); b.put("color",colorHolder[0]); b.put("track",track.isChecked());
                             b.put("days",days); b.put("alarm",al);
+                            if(linkTopicId[0].isEmpty()){b.remove("linkedRoadmapId");b.remove("linkedTopicId");}
+                            else{b.put("linkedRoadmapId",linkRoadmapId[0]);b.put("linkedTopicId",linkTopicId[0]);}
                             if(existing==null)schedules.put(b);
                             if(!al.optBoolean("enabled",false))ReminderReceiver.cancel(this,b.optString("id")); else ReminderReceiver.scheduleNext(this,b);
                             saveState(); dialog.dismiss(); showPlan();
@@ -1904,7 +2149,12 @@ public class MainActivity extends Activity {
             String raw=read(data.getData()); JSONObject sch=new JSONObject(raw); validateSchedule(sch);
             JSONArray imported=sch.optJSONArray("blocks");
             dlg().setTitle("Import daily schedule").setMessage("Replace the current schedule with "+imported.length()+" blocks? Alarm settings included in the JSON will be applied.").setPositiveButton("Replace",(d,w)->{
-                for(int i=0;i<schedules.length();i++){JSONObject old=schedules.optJSONObject(i);if(old!=null)ReminderReceiver.cancel(this,old.optString("id"));} schedules=imported; saveState(); scheduleAllImportedAlarms(); showPlan(); toast("Daily schedule imported");
+                for(int i=0;i<schedules.length();i++){JSONObject old=schedules.optJSONObject(i);if(old!=null)ReminderReceiver.cancel(this,old.optString("id"));}
+                schedules=imported; scheduleAllImportedAlarms();
+                int linkedCount=0;
+                for(int i=0;i<imported.length();i++){JSONObject b=imported.optJSONObject(i);if(b!=null&&!b.optString("linkedTopicId","").isEmpty())linkedCount++;}
+                saveState(); showPlan();
+                toast(linkedCount>0?("Daily schedule imported · "+linkedCount+" block"+(linkedCount==1?"":"s")+" linked to roadmap topics"):"Daily schedule imported");
             }).setNegativeButton("Cancel",null).show();
         }
         else if(req==REQ_SCHEDULE_EXPORT){ JSONObject sch=new JSONObject(); sch.put("format","devtrack-daily-schedule"); sch.put("version",1); sch.put("timezone",java.util.TimeZone.getDefault().getID()); sch.put("days",new JSONArray().put("MONDAY").put("TUESDAY").put("WEDNESDAY").put("THURSDAY").put("FRIDAY").put("SATURDAY").put("SUNDAY")); sch.put("blocks",schedules); write(data.getData(),sch.toString(2)); toast("Daily schedule exported"); }
