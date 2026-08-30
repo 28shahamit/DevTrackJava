@@ -36,6 +36,7 @@ public class MainActivity extends Activity {
     HashSet<String> completed=new HashSet<>();
     HashSet<String> expandedTopics=new HashSet<>();
     HashSet<String> expandedSessionGroups=new HashSet<>();
+    String progressCalendarMonth;
     TextView title;
     int page=0;
     String startupError;
@@ -566,6 +567,7 @@ public class MainActivity extends Activity {
         addText(day,"Real sessions: "+realSessionCount(today),13); box().addView(day);
 
         addStreakCard(box());
+        addCalendarCard(box());
         addDailyGoalCard(box());
         addProductivityCard(box());
         addAchievementsCard(box());
@@ -1252,50 +1254,113 @@ public class MainActivity extends Activity {
         LinearLayout c=card(); addText(c,"STREAK",11);
         int streak=currentStreak();
         addText(c,streak+(streak==1?" day":" days"),28);
-        addText(c,streak==0?"Track something today to start a streak.":"Keep it going — tap a day for details.",12);
+        addText(c,streak==0?"Track something today to start a streak.":"Keep it going.",12);
+        parent.addView(c);
+    }
+    String shiftMonth(String yyyyMM,int delta){
+        try{Calendar cal=Calendar.getInstance();cal.setTime(new SimpleDateFormat("yyyy-MM",Locale.US).parse(yyyyMM));cal.set(Calendar.DAY_OF_MONTH,1);cal.add(Calendar.MONTH,delta);return new SimpleDateFormat("yyyy-MM",Locale.US).format(cal.getTime());}
+        catch(Exception e){return yyyyMM;}
+    }
+    /** GitHub/LeetCode-style month calendar: darker/lighter fill by how much was tracked that day,
+     *  gold if the daily goal was hit, ring around today. Tapping any day opens its detail dialog. */
+    void addCalendarCard(LinearLayout parent){
+        if(progressCalendarMonth==null)progressCalendarMonth=new SimpleDateFormat("yyyy-MM",Locale.US).format(new Date());
+        LinearLayout c=card(); addText(c,"ACTIVITY CALENDAR",11);
+
+        Calendar cal=Calendar.getInstance();
+        try{cal.setTime(new SimpleDateFormat("yyyy-MM",Locale.US).parse(progressCalendarMonth));}catch(Exception ignored){}
+        cal.set(Calendar.DAY_OF_MONTH,1);
+        int year=cal.get(Calendar.YEAR); int month=cal.get(Calendar.MONTH);
+        String monthLabel=new SimpleDateFormat("MMMM yyyy",Locale.US).format(cal.getTime());
+
+        LinearLayout nav=row();
+        Button prev=microIconBtn("◀","Previous month"); prev.setOnClickListener(v->{progressCalendarMonth=shiftMonth(progressCalendarMonth,-1);refreshProgress();}); nav.addView(prev);
+        TextView monthTv=tv(monthLabel,15); monthTv.setTypeface(null,1); monthTv.setGravity(Gravity.CENTER); nav.addView(monthTv,new LinearLayout.LayoutParams(0,-2,1));
+        Button next=microIconBtn("▶","Next month"); next.setOnClickListener(v->{progressCalendarMonth=shiftMonth(progressCalendarMonth,1);refreshProgress();}); nav.addView(next);
+        c.addView(nav);
+
+        LinearLayout header=new LinearLayout(this); header.setOrientation(LinearLayout.HORIZONTAL); header.setPadding(0,dp(6),0,dp(2));
+        for(String w:new String[]{"S","M","T","W","T","F","S"}){TextView h=tv(w,10); h.setGravity(Gravity.CENTER); h.setTextColor(Color.parseColor("#5A6172")); header.addView(h,new LinearLayout.LayoutParams(0,-2,1));}
+        c.addView(header);
+
+        int firstDow=cal.get(Calendar.DAY_OF_WEEK)-1;
+        int daysInMonth=cal.getActualMaximum(Calendar.DAY_OF_MONTH);
         int goalMin=getSharedPreferences(PREFS,0).getInt(KEY_DAILY_GOAL_MIN,0);
-        LinearLayout daysRow=new LinearLayout(this); daysRow.setOrientation(LinearLayout.HORIZONTAL); daysRow.setPadding(0,dp(8),0,0);
-        int show=14;
-        for(int i=show-1;i>=0;i--){
-            String d=shiftDate(date(),-i);
-            long dayMs=todaySessionMs(d);
-            boolean active=dayMs>0;
-            boolean metGoal=goalMin>0&&dayMs>=goalMin*60000L;
-            boolean isToday=i==0;
-            TextView chip=tv(new SimpleDateFormat("d",Locale.US).format(parseIso(d)),11);
-            chip.setGravity(Gravity.CENTER); chip.setContentDescription(displayDate(d)+(metGoal?", daily goal met":active?", tracked":", no activity")+", tap for details");
-            LinearLayout.LayoutParams lp=new LinearLayout.LayoutParams(0,dp(32),1); lp.setMargins(dp(2),0,dp(2),0);
-            android.graphics.drawable.GradientDrawable gd=new android.graphics.drawable.GradientDrawable();
-            gd.setCornerRadius(dp(7)); gd.setColor(Color.parseColor(metGoal?"#FFD166":active?"#34C77B":"#1B202B"));
-            if(isToday)gd.setStroke(dp(2),Color.parseColor("#4F8EF7"));
-            chip.setBackground(gd); chip.setTextColor(Color.parseColor((metGoal||active)?"#0B0F17":"#9AA4B8")); chip.setLayoutParams(lp);
-            chip.setOnClickListener(v->showDayDetailDialog(d));
-            daysRow.addView(chip);
+        String today=date();
+        int rows=(int)Math.ceil((firstDow+daysInMonth)/7.0);
+        int dayCounter=1;
+        for(int r=0;r<rows;r++){
+            LinearLayout rowL=new LinearLayout(this); rowL.setOrientation(LinearLayout.HORIZONTAL); rowL.setPadding(0,dp(2),0,dp(2));
+            for(int col=0;col<7;col++){
+                int idx=r*7+col;
+                if(idx<firstDow||dayCounter>daysInMonth){
+                    View blank=new View(this); rowL.addView(blank,new LinearLayout.LayoutParams(0,dp(30),1));
+                } else {
+                    String d=String.format(Locale.US,"%04d-%02d-%02d",year,month+1,dayCounter);
+                    long dayMs=todaySessionMs(d);
+                    boolean metGoal=goalMin>0&&dayMs>=goalMin*60000L;
+                    boolean isToday=d.equals(today);
+                    String colorHex = metGoal?"#FFD166" : dayMs<=0?"#1B202B" : dayMs<15*60000L?"#1E4632" : dayMs<45*60000L?"#2C7A50" : "#34C77B";
+                    TextView cell=tv(String.valueOf(dayCounter),11); cell.setGravity(Gravity.CENTER);
+                    android.graphics.drawable.GradientDrawable gd=new android.graphics.drawable.GradientDrawable();
+                    gd.setCornerRadius(dp(6)); gd.setColor(Color.parseColor(colorHex));
+                    if(isToday)gd.setStroke(dp(2),Color.parseColor("#4F8EF7"));
+                    cell.setBackground(gd); cell.setTextColor(Color.parseColor((metGoal||dayMs>0)?"#0B0F17":"#9AA4B8"));
+                    cell.setContentDescription(displayDate(d)+(dayMs>0?", "+formatDurationSmart(dayMs)+" tracked":", no activity")+", tap for details");
+                    final String fd=d; cell.setOnClickListener(v->showDayDetailDialog(fd));
+                    LinearLayout.LayoutParams lp=new LinearLayout.LayoutParams(0,dp(30),1); lp.setMargins(dp(1),0,dp(1),0); cell.setLayoutParams(lp);
+                    rowL.addView(cell);
+                    dayCounter++;
+                }
+            }
+            c.addView(rowL);
         }
-        c.addView(daysRow);
+
         Button lookup=btn("🔍 Look up any day"); lookup.setContentDescription("Look up tracked activity for any past date");
         lookup.setOnClickListener(v->{
-            Calendar cal=Calendar.getInstance();
+            Calendar pick=Calendar.getInstance();
             new DatePickerDialog(this,R.style.AppTheme_Dialog,(view,y,mo,dd)->{
                 showDayDetailDialog(String.format(Locale.US,"%04d-%02d-%02d",y,mo+1,dd));
-            },cal.get(Calendar.YEAR),cal.get(Calendar.MONTH),cal.get(Calendar.DAY_OF_MONTH)).show();
+            },pick.get(Calendar.YEAR),pick.get(Calendar.MONTH),pick.get(Calendar.DAY_OF_MONTH)).show();
         });
         c.addView(lookup);
         parent.addView(c);
     }
     /** Longest run of consecutive days (ever, not just recent) with any tracked time. */
-    int longestStreak(){
+    int longestStreak(){String[] r=longestStreakRange(); return r==null?0:daysBetweenInclusive(r[0],r[1]);}
+    /** {startDate,endDate} of the longest streak ever, or null if there's no tracked history. */
+    String[] longestStreakRange(){
         TreeSet<String> days=new TreeSet<>();
         for(int i=0;i<sessions.length();i++){JSONObject s=sessions.optJSONObject(i);if(s!=null&&s.optLong("durationMs",0)>0)days.add(s.optString("date"));}
-        int longest=0,cur=0; String prev=null;
-        for(String d:days){ cur = (prev!=null&&shiftDate(prev,1).equals(d)) ? cur+1 : 1; longest=Math.max(longest,cur); prev=d; }
-        return longest;
+        int longest=0,cur=0; String prev=null,curStart=null,bestStart=null,bestEnd=null;
+        for(String d:days){
+            if(prev!=null&&shiftDate(prev,1).equals(d))cur++; else {cur=1;curStart=d;}
+            if(cur>longest){longest=cur;bestStart=curStart;bestEnd=d;}
+            prev=d;
+        }
+        return bestStart==null?null:new String[]{bestStart,bestEnd};
     }
+    int daysBetweenInclusive(String a,String b){try{Date d1=new SimpleDateFormat("yyyy-MM-dd",Locale.US).parse(a);Date d2=new SimpleDateFormat("yyyy-MM-dd",Locale.US).parse(b);return (int)((d2.getTime()-d1.getTime())/86400000L)+1;}catch(Exception e){return 0;}}
     long lifetimeTrackedMs(){long t=0;for(int i=0;i<sessions.length();i++){JSONObject s=sessions.optJSONObject(i);if(s!=null)t+=s.optLong("durationMs",0);}return t;}
+    /** Single longest continuous session in a productive category (Work/Learning/Project/Career) — your best focus stretch ever. */
+    long longestProductiveSessionMs(){
+        long max=0;
+        for(int i=0;i<sessions.length();i++){JSONObject s=sessions.optJSONObject(i);if(s==null)continue;if(PRODUCTIVE_CATS.contains(s.optString("category","OTHER")))max=Math.max(max,s.optLong("durationMs",0));}
+        return max;
+    }
     void addAchievementsCard(LinearLayout parent){
         LinearLayout c=card(); addText(c,"ACHIEVEMENTS",11);
-        int longest=longestStreak(); long lifetimeMs=lifetimeTrackedMs(); long lifetimeMin=lifetimeMs/60000;
-        addText(c,"Longest streak: "+longest+(longest==1?" day":" days")+" · Lifetime tracked: "+formatDuration(lifetimeMs),12);
+        int longest=longestStreak(); long lifetimeMs=lifetimeTrackedMs(); long lifetimeMin=lifetimeMs/60000; long bestSessionMs=longestProductiveSessionMs();
+
+        TextView streakLine=tv("Longest streak: "+longest+(longest==1?" day":" days")+(longest>0?" (tap for dates)":""),12);
+        streakLine.setTextColor(Color.parseColor(longest>0?"#4F8EF7":"#9AA4B8"));
+        streakLine.setOnClickListener(v->{
+            String[] r=longestStreakRange();
+            if(r==null){toast("No streak yet — track something to start one.");return;}
+            dlg().setTitle("Longest streak").setMessage(displayDate(r[0])+" – "+displayDate(r[1])+"\n"+longest+(longest==1?" day":" days")).setPositiveButton("Close",null).show();
+        });
+        c.addView(streakLine);
+        addText(c,"Lifetime tracked: "+formatDuration(lifetimeMs)+" · Longest focus session: "+(bestSessionMs>0?formatDurationSmart(bestSessionMs):"none yet"),12);
 
         addText(c,"Streak badges",11);
         LinearLayout streakRow=new LinearLayout(this); streakRow.setOrientation(LinearLayout.HORIZONTAL); streakRow.setPadding(0,dp(4),0,dp(8));
