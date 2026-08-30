@@ -474,10 +474,10 @@ public class MainActivity extends Activity {
             if(subs!=null&&subs.length()>0){
                 StringBuilder sb=new StringBuilder();
                 for(int si=0;si<subs.length();si++){
-                    String name=subName(subs,si); if(name.isEmpty())continue;
-                    int est=subEstimate(subs,si); int logged=subMin!=null?subMin.optInt(name,0):0;
+                    String subLabel=subName(subs,si); if(subLabel.isEmpty())continue;
+                    int est=subEstimate(subs,si); int logged=subMin!=null?subMin.optInt(subLabel,0):0;
                     if(sb.length()>0)sb.append("\n");
-                    sb.append("• ").append(name);
+                    sb.append("• ").append(subLabel);
                     if(est>0){int rem=est-logged;sb.append("  —  ").append(formatMin(logged)).append(" / ").append(formatMin(est)).append(rem>=0?(" ("+formatMin(rem)+" left)"):(" ("+formatMin(-rem)+" over)"));}
                     else sb.append(logged>0?("  —  "+formatMin(logged)+" logged"):"  —  not logged");
                 }
