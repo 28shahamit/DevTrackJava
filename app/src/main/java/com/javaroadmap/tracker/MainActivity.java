@@ -28,6 +28,7 @@ public class MainActivity extends Activity {
     static final int REQ_IMPORT=201, REQ_EXPORT=202, REQ_SCHEDULE_IMPORT=302, REQ_SCHEDULE_EXPORT=303, REQ_REPORT_EXPORT=304, REQ_SCHEDULE_IMPORT_DATE=305;
     String pendingReportText;
     String pendingScheduleImportDate;
+    HashSet<String> expandedPlanDates;
 
     FrameLayout content;
     JSONObject roadmap;
@@ -627,49 +628,70 @@ public class MainActivity extends Activity {
 
     void showPlan(){
         page=2; base("Plan","Your schedule is the source of truth for today's planned activities."); setNavSelected(R.id.navPlan);
+        if(expandedPlanDates==null){expandedPlanDates=new HashSet<>();expandedPlanDates.add(date());}
         LinearLayout actions=card(); addText(actions,"DAILY SCHEDULE",19);
-        Button imp=primaryBtn("📥 Import Daily Schedule JSON"); imp.setOnClickListener(v->importDailySchedule()); actions.addView(imp);
-        Button impDate=btn("📅 Import Schedule For a Date"); impDate.setOnClickListener(v->importDailyScheduleForDate()); actions.addView(impDate);
-        addText(actions,"Adds one-off blocks for a single day, on top of your recurring weekly schedule.",10);
+        Button imp=primaryBtn("📥 Import Schedule JSON"); imp.setOnClickListener(v->importDailyScheduleChooser()); actions.addView(imp);
         Button exp=btn("📤 Export Daily Schedule JSON"); exp.setOnClickListener(v->exportDailySchedule()); actions.addView(exp);
         Button addBlock=btn("＋ Add schedule block"); addBlock.setOnClickListener(v->scheduleBlockDialog(null,-1)); actions.addView(addBlock);
         box().addView(actions);
         addActiveTimerBanner(box());
 
-        String today=date(); LinearLayout timeline=card(); addText(timeline,"Today · "+today,20);
-        ArrayList<JSONObject> blocks=todaysScheduleBlocks(today);
-        if(blocks.isEmpty()) addText(timeline,"No schedule imported. Import a JSON schedule or add a block.",13);
-        else for(JSONObject b:blocks) addScheduleBlockRow(timeline,b);
-        box().addView(timeline);
-
-        LinearLayout tasksCard=card(); addText(tasksCard,"TODAY'S TASKS",19); boolean any=false;
-        for(int i=0;i<this.tasks.length();i++){JSONObject t=this.tasks.optJSONObject(i); if(t!=null&&today.equals(t.optString("date"))){any=true;taskCard(tasksCard,t,i);}}
-        if(!any)addText(tasksCard,"No manually added tasks. Your schedule above is already tracked automatically.",13);
-        Button add=btn("＋ Add Task"); add.setOnClickListener(v->taskDialog(null,-1)); tasksCard.addView(add); box().addView(tasksCard);
-
-        addTomorrowPreviewCard(box(),shiftDate(today,1));
+        String today=date();
+        for(String day:planDates())addPlanDateCard(box(),day,today);
 
         addSessionSummaryCard(box(),today);
     }
 
-    /** Read-only preview of the next day's plan (recurring schedule blocks for that weekday,
-     *  plus any manually added tasks dated for that day). Not interactive — Start/Done/Edit
-     *  belong to today's timeline only, since you can't track time against a day that hasn't
-     *  started yet. */
-    void addTomorrowPreviewCard(LinearLayout parent,String tomorrow){
-        LinearLayout card=card(); addText(card,"TOMORROW · "+tomorrow,19);
-        ArrayList<JSONObject> blocks=todaysScheduleBlocks(tomorrow);
-        if(blocks.isEmpty()) addText(card,"No schedule blocks fall on tomorrow.",13);
-        else for(JSONObject b:blocks) addTomorrowBlockRow(card,b);
-        boolean anyTask=false;
-        for(int i=0;i<this.tasks.length();i++){JSONObject t=this.tasks.optJSONObject(i); if(t!=null&&tomorrow.equals(t.optString("date"))){anyTask=true;break;}}
-        if(anyTask){
-            TextView tasksLabel=tv("TASKS",11); tasksLabel.setTextColor(Color.parseColor("#9AA4B8")); tasksLabel.setPadding(0,dp(10),0,dp(4)); card.addView(tasksLabel);
-            for(int i=0;i<this.tasks.length();i++){JSONObject t=this.tasks.optJSONObject(i); if(t!=null&&tomorrow.equals(t.optString("date")))addText(card,"• "+t.optString("title"),14);}
-        }
-        parent.addView(card);
+    /** Dates worth showing a schedule section for: today, tomorrow, and any other date that has
+     *  a one-off schedule block or a manually added task, so nothing imported for a future date
+     *  goes invisible. */
+    ArrayList<String> planDates(){
+        String today=date(); TreeSet<String> set=new TreeSet<>(); set.add(today); set.add(shiftDate(today,1));
+        for(int i=0;i<schedules.length();i++){JSONObject b=schedules.optJSONObject(i);if(b!=null&&isOneOffBlock(b)){String d=b.optString("date","");if(!d.isEmpty()&&d.compareTo(today)>=0)set.add(d);}}
+        for(int i=0;i<tasks.length();i++){JSONObject t=tasks.optJSONObject(i);if(t!=null){String d=t.optString("date","");if(!d.isEmpty()&&d.compareTo(today)>=0)set.add(d);}}
+        return new ArrayList<>(set);
     }
-    void addTomorrowBlockRow(LinearLayout parent,JSONObject b){
+    String planDateLabel(String day,String today){
+        if(day.equals(today))return "Today";
+        if(day.equals(shiftDate(today,1)))return "Tomorrow";
+        return dowLabel(day);
+    }
+    String dowLabel(String day){try{Date parsed=new SimpleDateFormat("yyyy-MM-dd",Locale.US).parse(day);return new SimpleDateFormat("EEEE",Locale.US).format(parsed);}catch(Exception e){return "";}}
+
+    /** One collapsible section per date in the Plan tab. Today defaults to expanded and is fully
+     *  interactive (Start/Done/Edit); other dates default to collapsed and are read-only previews
+     *  since you can't track time against a day that hasn't started yet. Tap the header to
+     *  expand or collapse any section, including Today's. */
+    void addPlanDateCard(LinearLayout parent,String day,String today){
+        boolean isToday=day.equals(today), expanded=expandedPlanDates.contains(day);
+        LinearLayout cardView=card();
+        LinearLayout header=row(); header.setGravity(Gravity.CENTER_VERTICAL);
+        TextView chevron=tv(expanded?"▾":"▸",16); chevron.setPadding(0,0,dp(8),0); header.addView(chevron);
+        TextView titleTv=tv(planDateLabel(day,today)+" · "+day,19); header.addView(titleTv,new LinearLayout.LayoutParams(0,-2,1));
+        header.setOnClickListener(v->{ if(expanded)expandedPlanDates.remove(day); else expandedPlanDates.add(day); showPlan(); });
+        cardView.addView(header);
+
+        if(expanded){
+            ArrayList<JSONObject> blocks=todaysScheduleBlocks(day);
+            if(blocks.isEmpty()) addText(cardView,isToday?"No schedule imported. Import a JSON schedule or add a block.":"No schedule blocks fall on this day.",13);
+            else for(JSONObject b:blocks){ if(isToday)addScheduleBlockRow(cardView,b); else addReadOnlyBlockRow(cardView,b); }
+
+            boolean anyTask=false;
+            for(int i=0;i<this.tasks.length();i++){JSONObject t=this.tasks.optJSONObject(i); if(t!=null&&day.equals(t.optString("date"))){anyTask=true;break;}}
+            if(isToday){
+                TextView tasksLabel=tv("TASKS",11); tasksLabel.setTextColor(Color.parseColor("#9AA4B8")); tasksLabel.setPadding(0,dp(10),0,dp(4)); cardView.addView(tasksLabel);
+                boolean any=false;
+                for(int i=0;i<this.tasks.length();i++){JSONObject t=this.tasks.optJSONObject(i); if(t!=null&&day.equals(t.optString("date"))){any=true;taskCard(cardView,t,i);}}
+                if(!any)addText(cardView,"No manually added tasks. Your schedule above is already tracked automatically.",13);
+                Button add=btn("＋ Add Task"); add.setOnClickListener(v->taskDialog(null,-1)); cardView.addView(add);
+            } else if(anyTask){
+                TextView tasksLabel=tv("TASKS",11); tasksLabel.setTextColor(Color.parseColor("#9AA4B8")); tasksLabel.setPadding(0,dp(10),0,dp(4)); cardView.addView(tasksLabel);
+                for(int i=0;i<this.tasks.length();i++){JSONObject t=this.tasks.optJSONObject(i); if(t!=null&&day.equals(t.optString("date")))addText(cardView,"• "+t.optString("title"),14);}
+            }
+        }
+        parent.addView(cardView);
+    }
+    void addReadOnlyBlockRow(LinearLayout parent,JSONObject b){
         LinearLayout row=row(); row.setPadding(0,dp(7),0,dp(7));
         View stripe=new View(this);int color;try{color=Color.parseColor(b.optString("color","#4F7CFF"));}catch(Exception e){color=Color.parseColor("#4F7CFF");}stripe.setBackgroundColor(color);row.addView(stripe,new LinearLayout.LayoutParams(dp(6),dp(52)));
         LinearLayout mid=new LinearLayout(this);mid.setOrientation(LinearLayout.VERTICAL);mid.setPadding(dp(12),0,dp(8),0);
@@ -2214,6 +2236,12 @@ public class MainActivity extends Activity {
     void importRoadmap(){Intent i=new Intent(Intent.ACTION_OPEN_DOCUMENT);i.setType("application/json");i.addCategory(Intent.CATEGORY_OPENABLE);startActivityForResult(i,REQ_IMPORT);}
     void exportRoadmap(){Intent i=new Intent(Intent.ACTION_CREATE_DOCUMENT);i.setType("application/json");i.putExtra(Intent.EXTRA_TITLE,roadmapName(roadmap).replaceAll("[^A-Za-z0-9_-]","_")+".json");startActivityForResult(i,REQ_EXPORT);}
     void importDailySchedule(){Intent i=new Intent(Intent.ACTION_OPEN_DOCUMENT);i.setType("application/json");i.addCategory(Intent.CATEGORY_OPENABLE);startActivityForResult(i,REQ_SCHEDULE_IMPORT);}
+    /** Single entry point for importing a schedule JSON: asks whether it's a recurring weekly
+     *  schedule (replaces everything) or a one-off schedule for a specific date (merged in). */
+    void importDailyScheduleChooser(){
+        String[] options={"Recurring weekly schedule (replaces your current schedule)","Just one specific date (added on top of your current schedule)"};
+        dlg().setTitle("Import schedule JSON").setItems(options,(d,which)->{ if(which==0)importDailySchedule(); else importDailyScheduleForDate(); }).show();
+    }
     /** Import a schedule JSON as one-off blocks for a single chosen date, merged into (not
      *  replacing) the existing recurring schedule. Defaults the picker to tomorrow. */
     void importDailyScheduleForDate(){
