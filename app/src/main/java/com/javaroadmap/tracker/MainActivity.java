@@ -25,8 +25,9 @@ public class MainActivity extends Activity {
     static final String KEY_TASKS="tasks";
     static final String KEY_SESSIONS="sessions";
     static final int REQ_NOTIFICATION=200;
-    static final int REQ_IMPORT=201, REQ_EXPORT=202, REQ_SCHEDULE_IMPORT=302, REQ_SCHEDULE_EXPORT=303, REQ_REPORT_EXPORT=304;
+    static final int REQ_IMPORT=201, REQ_EXPORT=202, REQ_SCHEDULE_IMPORT=302, REQ_SCHEDULE_EXPORT=303, REQ_REPORT_EXPORT=304, REQ_SCHEDULE_IMPORT_DATE=305;
     String pendingReportText;
+    String pendingScheduleImportDate;
 
     FrameLayout content;
     JSONObject roadmap;
@@ -170,7 +171,7 @@ public class MainActivity extends Activity {
         applySystemInsets();
         content=findViewById(R.id.content);
         try {
-            loadState();
+            loadState(); pruneExpiredOneOffBlocks();
             migrateLegacyCompletion();
             loadRoadmap();
             try { NotificationHelper.ensureChannel(this); } catch (Exception ignored) { }
@@ -213,7 +214,7 @@ public class MainActivity extends Activity {
         addText(c,"DevTrack did not crash. It stopped the failing startup operation so your app remains usable.",13);
         TextView err=tv(message,12); err.setTextColor(Color.parseColor("#FFB4AB")); c.addView(err);
         Button retry=btn("↻ Retry startup");
-        retry.setOnClickListener(v->{ startupError=null; try{ loadState(); loadRoadmap(); NotificationHelper.ensureChannel(this); showHome(); } catch(Exception e){ startupError=e.getClass().getSimpleName()+": "+safeMessage(e); showStartupError(startupError); }});
+        retry.setOnClickListener(v->{ startupError=null; try{ loadState(); pruneExpiredOneOffBlocks(); loadRoadmap(); NotificationHelper.ensureChannel(this); showHome(); } catch(Exception e){ startupError=e.getClass().getSimpleName()+": "+safeMessage(e); showStartupError(startupError); }});
         c.addView(retry);
         Button resetRoadmap=btn("Reset imported roadmap");
         resetRoadmap.setOnClickListener(v->{ getSharedPreferences(PREFS,0).edit().remove("roadmapOverride").apply(); startupError=null; loadRoadmap(); showHome(); });
@@ -628,6 +629,8 @@ public class MainActivity extends Activity {
         page=2; base("Plan","Your schedule is the source of truth for today's planned activities."); setNavSelected(R.id.navPlan);
         LinearLayout actions=card(); addText(actions,"DAILY SCHEDULE",19);
         Button imp=primaryBtn("📥 Import Daily Schedule JSON"); imp.setOnClickListener(v->importDailySchedule()); actions.addView(imp);
+        Button impDate=btn("📅 Import Schedule For a Date"); impDate.setOnClickListener(v->importDailyScheduleForDate()); actions.addView(impDate);
+        addText(actions,"Adds one-off blocks for a single day, on top of your recurring weekly schedule.",10);
         Button exp=btn("📤 Export Daily Schedule JSON"); exp.setOnClickListener(v->exportDailySchedule()); actions.addView(exp);
         Button addBlock=btn("＋ Add schedule block"); addBlock.setOnClickListener(v->scheduleBlockDialog(null,-1)); actions.addView(addBlock);
         box().addView(actions);
@@ -644,7 +647,38 @@ public class MainActivity extends Activity {
         if(!any)addText(tasksCard,"No manually added tasks. Your schedule above is already tracked automatically.",13);
         Button add=btn("＋ Add Task"); add.setOnClickListener(v->taskDialog(null,-1)); tasksCard.addView(add); box().addView(tasksCard);
 
+        addTomorrowPreviewCard(box(),shiftDate(today,1));
+
         addSessionSummaryCard(box(),today);
+    }
+
+    /** Read-only preview of the next day's plan (recurring schedule blocks for that weekday,
+     *  plus any manually added tasks dated for that day). Not interactive — Start/Done/Edit
+     *  belong to today's timeline only, since you can't track time against a day that hasn't
+     *  started yet. */
+    void addTomorrowPreviewCard(LinearLayout parent,String tomorrow){
+        LinearLayout card=card(); addText(card,"TOMORROW · "+tomorrow,19);
+        ArrayList<JSONObject> blocks=todaysScheduleBlocks(tomorrow);
+        if(blocks.isEmpty()) addText(card,"No schedule blocks fall on tomorrow.",13);
+        else for(JSONObject b:blocks) addTomorrowBlockRow(card,b);
+        boolean anyTask=false;
+        for(int i=0;i<this.tasks.length();i++){JSONObject t=this.tasks.optJSONObject(i); if(t!=null&&tomorrow.equals(t.optString("date"))){anyTask=true;break;}}
+        if(anyTask){
+            TextView tasksLabel=tv("TASKS",11); tasksLabel.setTextColor(Color.parseColor("#9AA4B8")); tasksLabel.setPadding(0,dp(10),0,dp(4)); card.addView(tasksLabel);
+            for(int i=0;i<this.tasks.length();i++){JSONObject t=this.tasks.optJSONObject(i); if(t!=null&&tomorrow.equals(t.optString("date")))addText(card,"• "+t.optString("title"),14);}
+        }
+        parent.addView(card);
+    }
+    void addTomorrowBlockRow(LinearLayout parent,JSONObject b){
+        LinearLayout row=row(); row.setPadding(0,dp(7),0,dp(7));
+        View stripe=new View(this);int color;try{color=Color.parseColor(b.optString("color","#4F7CFF"));}catch(Exception e){color=Color.parseColor("#4F7CFF");}stripe.setBackgroundColor(color);row.addView(stripe,new LinearLayout.LayoutParams(dp(6),dp(52)));
+        LinearLayout mid=new LinearLayout(this);mid.setOrientation(LinearLayout.VERTICAL);mid.setPadding(dp(12),0,dp(8),0);
+        addText(mid,b.optString("start")+" – "+b.optString("end"),12);
+        TextView titleTv=tv(blockTitle(b),16); if(b.optString("title","").trim().isEmpty())titleTv.setTextColor(Color.parseColor("#9AA4B8")); mid.addView(titleTv,new LinearLayout.LayoutParams(-1,-2));
+        mid.addView(labelWithDot(b.optString("category","OTHER"),categoryColor(b.optString("category","OTHER")),11));
+        if(isOneOffBlock(b)){TextView oneOff=tv("📅 One-off",11);oneOff.setTextColor(Color.parseColor("#9AA4B8"));mid.addView(oneOff);}
+        row.addView(mid,new LinearLayout.LayoutParams(0,-2,1));
+        parent.addView(row);
     }
 
     void addSessionSummaryCard(LinearLayout parent,String day){
@@ -1135,6 +1169,13 @@ public class MainActivity extends Activity {
     void loadState(){
         String raw=getSharedPreferences(PREFS,0).getString("state",null);
         try{ if(raw==null){tasks=new JSONArray();sessions=new JSONArray();schedules=loadBundledSchedule();return;} JSONObject st=new JSONObject(raw); tasks=st.optJSONArray("tasks");sessions=st.optJSONArray("sessions");schedules=st.optJSONArray("schedules");if(tasks==null)tasks=new JSONArray();if(sessions==null)sessions=new JSONArray();if(schedules==null)schedules=loadBundledSchedule(); }catch(Exception e){tasks=new JSONArray();sessions=new JSONArray();schedules=loadBundledSchedule();}
+    }
+    /** Drops one-off (date-tagged) schedule blocks whose date has already passed, so imported
+     *  single-day schedules don't accumulate forever. Recurring blocks are untouched. */
+    void pruneExpiredOneOffBlocks(){
+        if(schedules==null)return; String today=date(); boolean changed=false; JSONArray kept=new JSONArray();
+        for(int i=0;i<schedules.length();i++){JSONObject b=schedules.optJSONObject(i); if(b==null)continue; if(isOneOffBlock(b)&&b.optString("date").compareTo(today)<0){changed=true;continue;} kept.put(b);}
+        if(changed)schedules=kept;
     }
     JSONArray loadBundledSchedule(){ try{JSONObject sch=new JSONObject(readAsset("daily-schedule.json"));validateSchedule(sch);JSONArray blocks=sch.optJSONArray("blocks");return blocks==null?new JSONArray():blocks;}catch(Exception e){return new JSONArray();} }
     void saveState(){ try{JSONObject st=new JSONObject();st.put("tasks",tasks);st.put("sessions",sessions);st.put("schedules",schedules);getSharedPreferences(PREFS,0).edit().putString("state",st.toString()).apply();saveRoadmaps();}catch(Exception e){android.util.Log.e("DevTrack","saveState failed",e);} }
@@ -1760,7 +1801,10 @@ public class MainActivity extends Activity {
     JSONObject nextOrCurrentScheduleBlock(String day){return currentOrNextTrackableSchedule(day);}
 
     void validateSchedule(JSONObject sch)throws Exception{ if(sch==null)throw new Exception("Schedule is empty"); JSONArray blocks=sch.optJSONArray("blocks"); if(blocks==null)throw new Exception("Schedule is missing blocks"); for(int i=0;i<blocks.length();i++){JSONObject b=blocks.optJSONObject(i); if(b==null)throw new Exception("Invalid schedule block #"+(i+1)); if(b.optString("title").trim().isEmpty())throw new Exception("Block #"+(i+1)+" has no title"); if(b.optString("start").trim().isEmpty()||b.optString("end").trim().isEmpty())throw new Exception("Block #"+(i+1)+" needs start/end time"); String color=b.optString("color","#4F7CFF"); try{Color.parseColor(color);}catch(Exception e){throw new Exception("Invalid color in block #"+(i+1));}} }
-    ArrayList<JSONObject> todaysScheduleBlocks(String day){ ArrayList<JSONObject> out=new ArrayList<>(); String dow; try{ Date parsed=new SimpleDateFormat("yyyy-MM-dd",Locale.US).parse(day); dow=new SimpleDateFormat("EEEE",Locale.US).format(parsed).toUpperCase(Locale.US); }catch(Exception e){ dow=new SimpleDateFormat("EEEE",Locale.US).format(new Date()).toUpperCase(Locale.US); } for(int i=0;i<schedules.length();i++){JSONObject b=schedules.optJSONObject(i); if(b==null)continue; JSONArray days=b.optJSONArray("days"); boolean ok=days==null||days.length()==0; if(days!=null)for(int j=0;j<days.length();j++)if(dow.equals(days.optString(j).toUpperCase(Locale.US)))ok=true; if(ok)out.add(b);} Collections.sort(out,(a,b)->a.optString("start").compareTo(b.optString("start"))); return out; }
+    /** True if a block is a one-off (tied to a single calendar date via "date") rather than a
+     *  recurring weekly block (matched via "days"). One-off blocks ignore "days" entirely. */
+    boolean isOneOffBlock(JSONObject b){return b!=null&&!b.optString("date","").isEmpty();}
+    ArrayList<JSONObject> todaysScheduleBlocks(String day){ ArrayList<JSONObject> out=new ArrayList<>(); String dow; try{ Date parsed=new SimpleDateFormat("yyyy-MM-dd",Locale.US).parse(day); dow=new SimpleDateFormat("EEEE",Locale.US).format(parsed).toUpperCase(Locale.US); }catch(Exception e){ dow=new SimpleDateFormat("EEEE",Locale.US).format(new Date()).toUpperCase(Locale.US); } for(int i=0;i<schedules.length();i++){JSONObject b=schedules.optJSONObject(i); if(b==null)continue; boolean ok; if(isOneOffBlock(b)){ ok=day.equals(b.optString("date","")); } else { JSONArray days=b.optJSONArray("days"); ok=days==null||days.length()==0; if(days!=null)for(int j=0;j<days.length();j++)if(dow.equals(days.optString(j).toUpperCase(Locale.US)))ok=true; } if(ok)out.add(b);} Collections.sort(out,(a,b)->a.optString("start").compareTo(b.optString("start"))); return out; }
     JSONObject nextScheduleBlock(String day){ ArrayList<JSONObject> a=todaysScheduleBlocks(day); String now=new SimpleDateFormat("HH:mm",Locale.US).format(new Date()); for(JSONObject b:a)if(b.optString("end").compareTo(now)>=0)return b; return null; }
     boolean hasTrackedSessionForSchedule(JSONObject b){String id=b.optString("id","");if(id.isEmpty())return false;for(int i=0;i<sessions.length();i++){JSONObject s=sessions.optJSONObject(i);if(s!=null&&date().equals(s.optString("date"))&&id.equals(s.optString("scheduleId")))return true;}return false;}
 
@@ -1773,6 +1817,7 @@ public class MainActivity extends Activity {
         addText(mid,b.optString("start")+" – "+b.optString("end"),12);
         TextView titleTv=tv(blockTitle(b),16); if(b.optString("title","").trim().isEmpty())titleTv.setTextColor(Color.parseColor("#9AA4B8")); mid.addView(titleTv,new LinearLayout.LayoutParams(-1,-2));
         mid.addView(labelWithDot(b.optString("category","OTHER")+(b.optBoolean("track",true)?" · in time tracking":""),categoryColor(b.optString("category","OTHER")),11));
+        if(isOneOffBlock(b)){TextView oneOff=tv("📅 One-off · "+b.optString("date"),11);oneOff.setTextColor(Color.parseColor("#9AA4B8"));mid.addView(oneOff);}
         String stateLabel=scheduleStateLabelWithMeta(b); TextView stateTv=tv(stateLabel,12); stateTv.setTextColor(stateColor(stateLabel)); mid.addView(stateTv);
         if(overlap){TextView warn=tv("⚠ Overlaps another block",11);warn.setTextColor(Color.parseColor("#FFB84F"));mid.addView(warn);}
         String linkedTopicId=b.optString("linkedTopicId","");
@@ -1937,11 +1982,31 @@ public class MainActivity extends Activity {
         try{Color.parseColor(colorHolder[0]);}catch(Exception e){colorHolder[0]="#4F7CFF";}
         l.addView(colorSwatchRow(colorHolder));
 
-        addText(l,"Repeats on",11);
+        boolean existingOneOff=existing!=null&&isOneOffBlock(existing);
+        CheckBox oneOffCheck=new CheckBox(this);oneOffCheck.setText("One-off (specific date, not recurring)");oneOffCheck.setTextColor(Color.parseColor("#F4F6FB"));oneOffCheck.setChecked(existingOneOff);l.addView(oneOffCheck);
+
+        LinearLayout recurringGroup=new LinearLayout(this);recurringGroup.setOrientation(LinearLayout.VERTICAL);
+        addText(recurringGroup,"Repeats on",11);
         boolean[] selectedDays=new boolean[7];
         if(existing!=null){JSONArray ex=existing.optJSONArray("days"); if(ex!=null)for(int i=0;i<ex.length();i++){String dname=ex.optString(i).toUpperCase(Locale.US);for(int j=0;j<DAY_CODES.length;j++)if(DAY_CODES[j].equals(dname))selectedDays[j]=true;}}
-        l.addView(dayChipsRow(selectedDays));
-        addText(l,"No days selected = repeats every day",10);
+        recurringGroup.addView(dayChipsRow(selectedDays));
+        addText(recurringGroup,"No days selected = repeats every day",10);
+        l.addView(recurringGroup);
+
+        LinearLayout oneOffGroup=new LinearLayout(this);oneOffGroup.setOrientation(LinearLayout.VERTICAL);
+        addText(oneOffGroup,"Date",11);
+        String[] oneOffDate={existingOneOff?existing.optString("date"):shiftDate(date(),1)};
+        Button dateBtn=btn(oneOffDate[0]);
+        dateBtn.setOnClickListener(v->{
+            Calendar c=Calendar.getInstance(); try{c.setTime(new SimpleDateFormat("yyyy-MM-dd",Locale.US).parse(oneOffDate[0]));}catch(Exception ignored){}
+            new DatePickerDialog(this,(view,y,mo,dOfM)->{oneOffDate[0]=String.format(Locale.US,"%04d-%02d-%02d",y,mo+1,dOfM);dateBtn.setText(oneOffDate[0]);},c.get(Calendar.YEAR),c.get(Calendar.MONTH),c.get(Calendar.DAY_OF_MONTH)).show();
+        });
+        oneOffGroup.addView(dateBtn);
+        l.addView(oneOffGroup);
+
+        recurringGroup.setVisibility(oneOffCheck.isChecked()?View.GONE:View.VISIBLE);
+        oneOffGroup.setVisibility(oneOffCheck.isChecked()?View.VISIBLE:View.GONE);
+        oneOffCheck.setOnCheckedChangeListener((btn,checked)->{recurringGroup.setVisibility(checked?View.GONE:View.VISIBLE);oneOffGroup.setVisibility(checked?View.VISIBLE:View.GONE);});
 
         CheckBox track=new CheckBox(this);track.setText("Include in time tracking");track.setTextColor(Color.parseColor("#F4F6FB"));track.setChecked(existing==null||existing.optBoolean("track",true));l.addView(track);
 
@@ -1991,7 +2056,7 @@ public class MainActivity extends Activity {
                     candidate.put("category",String.valueOf(cat.getSelectedItem()));
                     candidate.put("color",colorHolder[0]); candidate.put("track",track.isChecked());
                     JSONArray days=new JSONArray(); for(int i=0;i<7;i++)if(selectedDays[i])days.put(DAY_CODES[i]);
-                    candidate.put("days",days);
+                    if(oneOffCheck.isChecked())candidate.put("date",oneOffDate[0]); else candidate.put("days",days);
                     JSONObject al=new JSONObject(); al.put("enabled",alarm.isChecked());
                     al.put("minutesBefore",Integer.parseInt(ALARM_MIN_OPTIONS[Math.max(0,minsSp.getSelectedItemPosition())]));
                     al.put("sound","alarm"); candidate.put("alarm",al);
@@ -2002,7 +2067,8 @@ public class MainActivity extends Activity {
                             JSONObject b=existing==null?new JSONObject():existing;
                             b.put("id",candidate.getString("id")); b.put("title",titleVal); b.put("start",startVal); b.put("end",endVal);
                             b.put("category",candidate.getString("category")); b.put("color",colorHolder[0]); b.put("track",track.isChecked());
-                            b.put("days",days); b.put("alarm",al);
+                            if(oneOffCheck.isChecked()){b.put("date",oneOffDate[0]);b.remove("days");} else {b.put("days",days);b.remove("date");}
+                            b.put("alarm",al);
                             if(linkTopicId[0].isEmpty()){b.remove("linkedRoadmapId");b.remove("linkedTopicId");}
                             else{b.put("linkedRoadmapId",linkRoadmapId[0]);b.put("linkedTopicId",linkTopicId[0]);}
                             if(existing==null)schedules.put(b);
@@ -2040,12 +2106,22 @@ public class MainActivity extends Activity {
         if(m1<0||n1<0||m2<0||n2<0)return false;
         return m1<n2 && m2<n1;
     }
+    String dowOf(String date){try{Date parsed=new SimpleDateFormat("yyyy-MM-dd",Locale.US).parse(date);return new SimpleDateFormat("EEEE",Locale.US).format(parsed).toUpperCase(Locale.US);}catch(Exception e){return "";}}
+    /** Whether two blocks could ever land on the same calendar day, handling one-off (date-tagged)
+     *  blocks alongside recurring (days-of-week) ones. */
+    boolean blocksShareADay(JSONObject a,JSONObject b){
+        boolean aOneOff=isOneOffBlock(a), bOneOff=isOneOffBlock(b);
+        if(aOneOff&&bOneOff)return a.optString("date").equals(b.optString("date"));
+        if(aOneOff)return daysShareOverlap(new JSONArray().put(dowOf(a.optString("date"))),b.optJSONArray("days"));
+        if(bOneOff)return daysShareOverlap(a.optJSONArray("days"),new JSONArray().put(dowOf(b.optString("date"))));
+        return daysShareOverlap(a.optJSONArray("days"),b.optJSONArray("days"));
+    }
     ArrayList<JSONObject> findOverlappingBlocks(JSONObject candidate,String excludeId){
         ArrayList<JSONObject> out=new ArrayList<>();
         for(int i=0;i<schedules.length();i++){
             JSONObject b=schedules.optJSONObject(i); if(b==null)continue;
             if(excludeId!=null&&excludeId.equals(b.optString("id")))continue;
-            if(daysShareOverlap(candidate.optJSONArray("days"),b.optJSONArray("days"))&&timesOverlap(candidate.optString("start"),candidate.optString("end"),b.optString("start"),b.optString("end")))
+            if(blocksShareADay(candidate,b)&&timesOverlap(candidate.optString("start"),candidate.optString("end"),b.optString("start"),b.optString("end")))
                 out.add(b);
         }
         return out;
@@ -2138,6 +2214,16 @@ public class MainActivity extends Activity {
     void importRoadmap(){Intent i=new Intent(Intent.ACTION_OPEN_DOCUMENT);i.setType("application/json");i.addCategory(Intent.CATEGORY_OPENABLE);startActivityForResult(i,REQ_IMPORT);}
     void exportRoadmap(){Intent i=new Intent(Intent.ACTION_CREATE_DOCUMENT);i.setType("application/json");i.putExtra(Intent.EXTRA_TITLE,roadmapName(roadmap).replaceAll("[^A-Za-z0-9_-]","_")+".json");startActivityForResult(i,REQ_EXPORT);}
     void importDailySchedule(){Intent i=new Intent(Intent.ACTION_OPEN_DOCUMENT);i.setType("application/json");i.addCategory(Intent.CATEGORY_OPENABLE);startActivityForResult(i,REQ_SCHEDULE_IMPORT);}
+    /** Import a schedule JSON as one-off blocks for a single chosen date, merged into (not
+     *  replacing) the existing recurring schedule. Defaults the picker to tomorrow. */
+    void importDailyScheduleForDate(){
+        String initial=shiftDate(date(),1); Calendar c=Calendar.getInstance();
+        try{c.setTime(new SimpleDateFormat("yyyy-MM-dd",Locale.US).parse(initial));}catch(Exception ignored){}
+        new DatePickerDialog(this,(view,y,m,dOfM)->{
+            pendingScheduleImportDate=String.format(Locale.US,"%04d-%02d-%02d",y,m+1,dOfM);
+            Intent i=new Intent(Intent.ACTION_OPEN_DOCUMENT);i.setType("application/json");i.addCategory(Intent.CATEGORY_OPENABLE);startActivityForResult(i,REQ_SCHEDULE_IMPORT_DATE);
+        },c.get(Calendar.YEAR),c.get(Calendar.MONTH),c.get(Calendar.DAY_OF_MONTH)).show();
+    }
     void exportDailySchedule(){Intent i=new Intent(Intent.ACTION_CREATE_DOCUMENT);i.setType("application/json");i.putExtra(Intent.EXTRA_TITLE,"devtrack-daily-schedule.json");startActivityForResult(i,REQ_SCHEDULE_EXPORT);}
 
     void importBackup(){Intent i=new Intent(Intent.ACTION_OPEN_DOCUMENT);i.setType("application/json");i.addCategory(Intent.CATEGORY_OPENABLE);startActivityForResult(i,300);}
@@ -2155,6 +2241,24 @@ public class MainActivity extends Activity {
                 for(int i=0;i<imported.length();i++){JSONObject b=imported.optJSONObject(i);if(b!=null&&!b.optString("linkedTopicId","").isEmpty())linkedCount++;}
                 saveState(); showPlan();
                 toast(linkedCount>0?("Daily schedule imported · "+linkedCount+" block"+(linkedCount==1?"":"s")+" linked to roadmap topics"):"Daily schedule imported");
+            }).setNegativeButton("Cancel",null).show();
+        }
+        else if(req==REQ_SCHEDULE_IMPORT_DATE){
+            String targetDate=pendingScheduleImportDate; pendingScheduleImportDate=null;
+            if(targetDate==null){toast("Import failed: no date was chosen");return;}
+            String raw=read(data.getData()); JSONObject sch=new JSONObject(raw); validateSchedule(sch);
+            JSONArray importedRaw=sch.optJSONArray("blocks");
+            JSONArray stamped=new JSONArray();
+            for(int i=0;i<importedRaw.length();i++){
+                JSONObject b=importedRaw.optJSONObject(i); if(b==null)continue;
+                b.put("id",UUID.randomUUID().toString()); b.put("date",targetDate); b.remove("days");
+                stamped.put(b);
+            }
+            String finalDate=targetDate;
+            dlg().setTitle("Import schedule for "+finalDate).setMessage("Add "+stamped.length()+" block"+(stamped.length()==1?"":"s")+" for "+finalDate+"? This is added on top of your existing recurring schedule — nothing else is replaced.").setPositiveButton("Add",(d,w)->{
+                for(int i=0;i<stamped.length();i++)schedules.put(stamped.optJSONObject(i));
+                scheduleAllImportedAlarms(); saveState(); showPlan();
+                toast(stamped.length()+" block"+(stamped.length()==1?"":"s")+" added for "+finalDate);
             }).setNegativeButton("Cancel",null).show();
         }
         else if(req==REQ_SCHEDULE_EXPORT){ JSONObject sch=new JSONObject(); sch.put("format","devtrack-daily-schedule"); sch.put("version",1); sch.put("timezone",java.util.TimeZone.getDefault().getID()); sch.put("days",new JSONArray().put("MONDAY").put("TUESDAY").put("WEDNESDAY").put("THURSDAY").put("FRIDAY").put("SATURDAY").put("SUNDAY")); sch.put("blocks",schedules); write(data.getData(),sch.toString(2)); toast("Daily schedule exported"); }
